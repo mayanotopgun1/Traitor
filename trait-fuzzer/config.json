@@ -1,0 +1,24 @@
+{
+    "fuzzer": {
+        "iterations": 100,
+        "mutations_per_seed": 15,
+        "seed_selection_strategy": "ttdn_metric",
+        "max_time_per_case_sec": 5,
+        "strategy_weights": {
+            "ast_structural": 0.5,
+            "ast_non_structural": 0.5,
+            "llm_injection": 0.0
+        },
+        "stall_threshold": 10
+    },
+    "paths": {
+        "seeds": "trait-fuzzer/seeds/fuzz_target_1",
+        "results": "trait-fuzzer/results",
+        "logs": "trait-fuzzer/logs"
+    },
+    "llm": {
+        "provider": "mock",
+        "model": "gpt-4",
+        "api_key_env": "OPENAI_API_KEY"
+    }
+}

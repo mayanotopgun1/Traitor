@@ -1,0 +1,3 @@
+﻿# 忽略种子文件
+/trait-fuzzer/seeds/
+/trait-fuzzer/seeds/**
