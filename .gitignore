@@ -1,3 +1,21 @@
 ﻿# 忽略种子文件
 /trait-fuzzer/seeds/
 /trait-fuzzer/seeds/**
+
+# Python/虚拟环境与缓存
+/env/
+/.venv/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Rust/Cargo 构建产物
+**/target/
+
+# 运行产物（夜跑/日志/结果）
+/trait-fuzzer/logs*/
+/trait-fuzzer/results*/
+
+# 测试/调试脚本可能生成的输出
+/trait-fuzzer/test/mutated_output*.rs
