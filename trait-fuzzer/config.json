@@ -1,6 +1,6 @@
 {
     "fuzzer": {
-        "iterations": 100,
+        "iterations": 100000,
         "mutations_per_seed": 15,
         "seed_selection_strategy": "ttdn_metric",
         "max_time_per_case_sec": 5,
@@ -9,12 +9,37 @@
             "ast_non_structural": 0.5,
             "llm_injection": 0.0
         },
+        "structural_subweights": {
+            "constraint_injection": 0.70,
+            "add_impl": 0.15,
+            "add_trait": 0.10,
+            "add_assoc_type": 0.05
+        },
         "stall_threshold": 10
     },
+    "run": {
+        "structural_only": true,
+        "max_cases": null,
+        "max_results_gb": null,
+        "min_free_gb": null,
+
+        "keep_success_cases": 200,
+        "keep_error_cases": 200,
+
+        "promote_success": true,
+        "new_seeds_max": 2000,
+        "new_seeds_prefix": "new"
+    },
     "paths": {
-        "seeds": "trait-fuzzer/seeds/fuzz_target_1",
-        "results": "trait-fuzzer/results",
-        "logs": "trait-fuzzer/logs"
+        "seeds": "seeds",
+        "results": "results",
+        "logs": "logs"
+    },
+    "compiler": {
+        "enable_next_trait_solver": true,
+        "rustc_cmd": ["rustc"],
+        "rustc_z_cmd": ["rustc", "+nightly"],
+        "next_trait_solver_flag": "-Znext-solver=coherence"
     },
     "llm": {
         "provider": "mock",

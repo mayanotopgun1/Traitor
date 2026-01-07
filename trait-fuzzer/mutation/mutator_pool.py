@@ -1,17 +1,33 @@
 import random
-from typing import List, Dict, Optional
+from typing import Dict
 import logging
 
 class MutatorPool:
     def __init__(self, config: Dict):
         self.logger = logging.getLogger(__name__)
-        self.weights = config.get("fuzzer", {}).get("strategy_weights", {
+        fuzzer_cfg = config.get("fuzzer", {})
+
+        self.weights = fuzzer_cfg.get("strategy_weights", {
             "ast_structural": 0.4,
             "ast_non_structural": 0.4,
             "llm_injection": 0.2
         })
         self.strategies = list(self.weights.keys())
         self.probs = list(self.weights.values())
+
+        # Sub-weights inside AST-structural strategy.
+        # If not provided, keep legacy equal probability among 4 structural mutators.
+        self.structural_ops = [
+            "add_assoc_type",
+            "add_trait",
+            "add_impl",
+            "constraint_injection",
+        ]
+        default_structural_subweights = {op: 1.0 for op in self.structural_ops}
+        self.structural_subweights = fuzzer_cfg.get(
+            "structural_subweights",
+            default_structural_subweights,
+        )
 
     def select_strategy(self) -> str:
         """
@@ -22,21 +38,14 @@ class MutatorPool:
         
         # Sub-selection for AST
         if strategy == "ast_structural":
-            return random.choice([
-                "type_erasure", 
-                "supertrait_expansion", 
-                "where_clause_expansion",
-                "trait_item_removal",
-                "add_assoc_type",
-                "type_overwriting",
-                "generic_narrowing",
-                "add_trait",
-                "add_generic_type"
-            ])
+            weights = [float(self.structural_subweights.get(op, 0.0)) for op in self.structural_ops]
+            # If misconfigured (all zeros), fall back to equal weights.
+            if not any(w > 0 for w in weights):
+                weights = [1.0] * len(self.structural_ops)
+            return random.choices(self.structural_ops, weights=weights, k=1)[0]
         if strategy == "ast_non_structural":
             return random.choice([
                 "bin_op_flip", 
-                "type_erasure", 
                 "int_literal_change",
                 "bool_flip",
                 "replace_by_constant",

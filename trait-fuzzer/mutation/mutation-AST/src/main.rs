@@ -1,9 +1,11 @@
 use clap::Parser;
+use quote::quote;
 use std::fs;
 use std::path::PathBuf;
 use syn::{parse_file, File};
 
 mod mutators;
+mod ttdn;
 use mutators::structural::*;
 use mutators::non_structural::*;
 use mutators::framework::Mutator;
@@ -25,19 +27,44 @@ fn main() {
     let args = Args::parse();
     
     let content = fs::read_to_string(&args.input).expect("Failed to read input file");
-    let mut syntax_tree: File = parse_file(&content).expect("Failed to parse Rust code");
+    let mut syntax_tree: File = match parse_file(&content) {
+        Ok(f) => f,
+        Err(e) => {
+            // Many rustc tests intentionally use syntax that newer compilers accept
+            // but `syn` may not yet parse. Don't panic; let the driver skip.
+            eprintln!("Parse failed: {}", e);
+            eprintln!("No mutation performed.");
+            fs::write(&args.output, content).expect("Failed to write output file");
+            return;
+        }
+    };
+
+    // Unified TTDN metrics mode: emit JSON for the Python driver (seed selection/stagnation).
+    // Keeps the same CLI contract (input/output/mode) to avoid changing callers.
+    if args.mode.as_str() == "ttdn_metrics" {
+        let info = crate::ttdn::TtdnInfo::from_file(&syntax_tree);
+        let (depth, cycles) = info.complexity();
+        let payload = serde_json::json!({
+            "depth": depth,
+            "cycles": cycles,
+            "traits": info.traits.len(),
+            "types": info.types.len(),
+            "impl_edges": info.impl_edges.len(),
+            "supertrait_edges": info.supertrait_edges.len(),
+            "trait_assoc_types": info.trait_assoc_types.len(),
+            "impl_assoc_bindings": info.impl_assoc_bindings.len(),
+        });
+        println!("{}", payload.to_string());
+        fs::write(&args.output, content).expect("Failed to write output file");
+        return;
+    }
 
     let mutated = match args.mode.as_str() {
         // Structural
-        "type_erasure" => TypeErasureMutator.run(&mut syntax_tree),
-        "supertrait_expansion" => SupertraitExpansionMutator.run(&mut syntax_tree),
-        "where_clause_expansion" => WhereClauseExpansionMutator.run(&mut syntax_tree),
-        "trait_item_removal" => TraitItemRemovalMutator.run(&mut syntax_tree),
         "add_assoc_type" => AddAssocTypeMutator.run(&mut syntax_tree),
-        "type_overwriting" => TypeOverwritingMutator.run(&mut syntax_tree),
-        "generic_narrowing" => GenericNarrowingMutator.run(&mut syntax_tree),
         "add_trait" => AddTraitMutator.run(&mut syntax_tree),
-        "add_generic_type" => AddGenericTypeMutator.run(&mut syntax_tree),
+        "add_impl" => AddImplMutator.run(&mut syntax_tree),
+        "constraint_injection" => ConstraintInjectionMutator.run(&mut syntax_tree),
         
         // Non-Structural
         "bin_op_flip" => BinOpFlipMutator.run(&mut syntax_tree),
@@ -58,6 +85,20 @@ fn main() {
         eprintln!("No mutation performed.");
     }
 
-    let mutated_content = prettyplease::unparse(&syntax_tree);
+    // prettyplease can panic on newer/unsupported `syn` nodes (e.g. TypeParamBound::Verbatim).
+    // Don't let formatting crash the whole mutation tool; fall back to token-based printing.
+    // Note: even if we catch_unwind, the default panic hook prints to stderr; temporarily silence it.
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let mutated_content = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        prettyplease::unparse(&syntax_tree)
+    })) {
+        Ok(s) => s,
+        Err(_) => {
+            eprintln!("prettyplease panicked; falling back to token-based output");
+            quote!(#syntax_tree).to_string()
+        }
+    };
+    std::panic::set_hook(prev_hook);
     fs::write(&args.output, mutated_content).expect("Failed to write output file");
 }
