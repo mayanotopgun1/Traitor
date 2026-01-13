@@ -481,11 +481,6 @@ impl ConstraintInjectionApplier {
     }
 
     fn choose_projection_where_predicate(&self, prefer_self_ty: Option<&Ident>) -> Option<WherePredicate> {
-        // We only inject projection constraints when the seed already provides a concrete binding:
-        //   impl Trait for Type { type Assoc = SomeType; }
-        // This matches the idea: TTDN guides us to "real" projections.
-        const PROJECTION_EQ_PROB: f64 = 0.30;
-
         let mut rng = rand::thread_rng();
         // 1) Prefer concrete assoc bindings from impl blocks.
         let candidates: Vec<&ImplAssocBinding> = match prefer_self_ty {
@@ -505,14 +500,6 @@ impl ConstraintInjectionApplier {
         };
 
         if let Some(binding) = pool.choose(&mut rng).copied() {
-            if rng.gen_bool(PROJECTION_EQ_PROB) {
-                let self_ty = &binding.self_ty;
-                let tr = &binding.trait_ident;
-                let assoc = &binding.assoc_ident;
-                let rhs = &binding.rhs_ty;
-                return Some(parse_quote!(<#self_ty as #tr>::#assoc = #rhs));
-            }
-
             let bound_trait = self.choose_trait_prefer_custom(&[]);
             let self_ty = &binding.self_ty;
             let tr = &binding.trait_ident;
@@ -554,7 +541,6 @@ impl ConstraintInjectionApplier {
 
         // 0) Occasionally inject a projection constraint to exercise normalization:
         //    where <Type as Trait>::Assoc: Bound
-        //    where <Type as Trait>::Assoc = Ty
         if rng.gen_bool(PROJECTION_PRED_PROB) {
             if let Some(pred) = self.choose_projection_where_predicate(self_ty_ident) {
                 return Some(pred);

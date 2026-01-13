@@ -1,9 +1,9 @@
 {
     "fuzzer": {
-        "iterations": 100000,
-        "mutations_per_seed": 15,
+        "iterations": 50000,
+        "mutations_per_seed": 20,
         "seed_selection_strategy": "ttdn_metric",
-        "max_time_per_case_sec": 5,
+        "max_time_per_case_sec": 50,
         "strategy_weights": {
             "ast_structural": 0.5,
             "ast_non_structural": 0.5,
@@ -15,7 +15,8 @@
             "add_trait": 0.10,
             "add_assoc_type": 0.05
         },
-        "stall_threshold": 10
+        "stall_threshold": 10,
+        "max_promotions_per_seed": 2
     },
     "run": {
         "structural_only": true,
@@ -23,12 +24,12 @@
         "max_results_gb": null,
         "min_free_gb": null,
 
-        "keep_success_cases": 200,
-        "keep_error_cases": 200,
+        "keep_success_cases": 100,
+        "keep_error_cases": 100,
 
-        "promote_success": true,
-        "new_seeds_max": 2000,
-        "new_seeds_prefix": "new"
+        "promote_success": false,
+        "new_seeds_max": 1000,
+        "new_seeds_prefix": "New"
     },
     "paths": {
         "seeds": "seeds",
@@ -37,9 +38,10 @@
     },
     "compiler": {
         "enable_next_trait_solver": true,
+        "enable_nightly_compile": true,
         "rustc_cmd": ["rustc"],
         "rustc_z_cmd": ["rustc", "+nightly"],
-        "next_trait_solver_flag": "-Znext-solver=coherence"
+        "next_trait_solver_flag": "-Znext-solver=globally"
     },
     "llm": {
         "provider": "mock",

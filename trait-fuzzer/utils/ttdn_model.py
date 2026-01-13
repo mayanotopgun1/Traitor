@@ -7,8 +7,6 @@ from typing import Dict, Optional
 
 @dataclass(frozen=True)
 class TTDNComplexity:
-    depth: int
-    cycles: int
     extra: Dict[str, int]
 
 
@@ -63,13 +61,11 @@ class TTDNModel:
             )
 
             payload = json.loads(proc.stdout.strip() or "{}")
-            depth = int(payload.get("depth", 0))
-            cycles = int(payload.get("cycles", 0))
-            extra = {k: int(v) for k, v in payload.items() if k not in ("depth", "cycles") and isinstance(v, int)}
-            return TTDNComplexity(depth=depth, cycles=cycles, extra=extra)
+            extra = {k: int(v) for k, v in payload.items() if isinstance(v, int)}
+            return TTDNComplexity(extra=extra)
         except Exception:
             # Minimal fallback: if metrics extraction fails, return a neutral score.
-            return TTDNComplexity(depth=1, cycles=0, extra={})
+            return TTDNComplexity(extra={})
         finally:
             try:
                 if out_path.exists():

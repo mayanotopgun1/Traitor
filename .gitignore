@@ -2,20 +2,27 @@
 /trait-fuzzer/seeds/
 /trait-fuzzer/seeds/**
 
-# Python/虚拟环境与缓存
+# 也不要上传本地 smoke seeds（临时验证用）
+/trait-fuzzer/seeds_smoke/
+/trait-fuzzer/seeds_smoke/**
+
+# 本地环境/上游仓库/构建产物（体积大且不可复现）
 /env/
-/.venv/
+/rust/
+/trait-fuzzer/_upstream/
+/trait-fuzzer/mutation/mutation-AST/target/
+
+# 运行产物/日志（通常巨大且频繁变化）
+/trait-fuzzer/logs/
+/trait-fuzzer/logs_*/
+/trait-fuzzer/my_fuzz.log
+/trait-fuzzer/results/
+/trait-fuzzer/results_*/
+
+# Python 缓存
 **/__pycache__/
-*.py[cod]
-.pytest_cache/
-.mypy_cache/
+*.pyc
+*.pyo
 
-# Rust/Cargo 构建产物
-**/target/
-
-# 运行产物（夜跑/日志/结果）
-/trait-fuzzer/logs*/
-/trait-fuzzer/results*/
-
-# 测试/调试脚本可能生成的输出
-/trait-fuzzer/test/mutated_output*.rs
+# 编辑器/系统杂项
+.DS_Store

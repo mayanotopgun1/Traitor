@@ -21,6 +21,16 @@ struct Args {
 
     #[arg(short, long)]
     mode: String,
+
+    /// Force a particular mutation-candidate index (0-based) within the selected mutator.
+    /// If out of range, the mutator will fall back to random selection.
+    #[arg(long)]
+    index: Option<usize>,
+
+    /// Emit mutation-choice metadata to stderr as a single parseable line.
+    /// Format: "MUTATION_CHOICE mode=<mode> count=<count> index=<index> mutated=<0|1>"
+    #[arg(long, default_value_t = false)]
+    emit_choice: bool,
 }
 
 fn main() {
@@ -43,10 +53,10 @@ fn main() {
     // Keeps the same CLI contract (input/output/mode) to avoid changing callers.
     if args.mode.as_str() == "ttdn_metrics" {
         let info = crate::ttdn::TtdnInfo::from_file(&syntax_tree);
-        let (depth, cycles) = info.complexity();
+        let c = crate::ttdn::ConstraintChoiceMetrics::from_file(&syntax_tree);
         let payload = serde_json::json!({
-            "depth": depth,
-            "cycles": cycles,
+            "constraint_sites": c.constraint_sites,
+            "constraint_choice_sum": c.constraint_choice_sum,
             "traits": info.traits.len(),
             "types": info.types.len(),
             "impl_edges": info.impl_edges.len(),
@@ -59,25 +69,36 @@ fn main() {
         return;
     }
 
-    let mutated = match args.mode.as_str() {
+    let (mutated, chosen_index, candidate_count) = match args.mode.as_str() {
         // Structural
-        "add_assoc_type" => AddAssocTypeMutator.run(&mut syntax_tree),
-        "add_trait" => AddTraitMutator.run(&mut syntax_tree),
-        "add_impl" => AddImplMutator.run(&mut syntax_tree),
-        "constraint_injection" => ConstraintInjectionMutator.run(&mut syntax_tree),
+        "add_assoc_type" => AddAssocTypeMutator.run_with_meta(&mut syntax_tree, args.index),
+        "add_trait" => AddTraitMutator.run_with_meta(&mut syntax_tree, args.index),
+        "add_impl" => AddImplMutator.run_with_meta(&mut syntax_tree, args.index),
+        "constraint_injection" => ConstraintInjectionMutator.run_with_meta(&mut syntax_tree, args.index),
         
         // Non-Structural
-        "bin_op_flip" => BinOpFlipMutator.run(&mut syntax_tree),
-        "int_literal_change" => IntLiteralChangeMutator.run(&mut syntax_tree),
-        "bool_flip" => BoolFlipMutator.run(&mut syntax_tree),
-        "replace_by_constant" => ReplaceByConstantMutator.run(&mut syntax_tree),
-        "inject_control_flow" => InjectControlFlowMutator.run(&mut syntax_tree),
+        "bin_op_flip" => BinOpFlipMutator.run_with_meta(&mut syntax_tree, args.index),
+        "int_literal_change" => IntLiteralChangeMutator.run_with_meta(&mut syntax_tree, args.index),
+        "bool_flip" => BoolFlipMutator.run_with_meta(&mut syntax_tree, args.index),
+        "replace_by_constant" => ReplaceByConstantMutator.run_with_meta(&mut syntax_tree, args.index),
+        "inject_control_flow" => InjectControlFlowMutator.run_with_meta(&mut syntax_tree, args.index),
         
         _ => {
             eprintln!("Unknown mode: {}", args.mode);
-            false
+            (false, 0, 0)
         }
     };
+
+    if args.emit_choice {
+        let m = if mutated { 1 } else { 0 };
+        eprintln!(
+            "MUTATION_CHOICE mode={} count={} index={} mutated={}",
+            args.mode,
+            candidate_count,
+            chosen_index,
+            m
+        );
+    }
 
     if mutated {
         eprintln!("Mutation successful.");

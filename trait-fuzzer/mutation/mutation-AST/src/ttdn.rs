@@ -1,7 +1,9 @@
 use quote::ToTokens;
 use rand::seq::SliceRandom;
 use syn::visit::{self, Visit};
-use syn::{Ident, ItemEnum, ItemImpl, ItemStruct, ItemTrait, TraitItem, Type, TypeParamBound};
+use syn::{GenericParam, Ident, ItemEnum, ItemImpl, ItemStruct, ItemTrait, TraitItem, Type, TypeParamBound, WherePredicate};
+
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Default, Clone)]
 pub struct TtdnInfo {
@@ -27,6 +29,157 @@ pub struct ImplAssocBinding {
     pub trait_ident: Ident,
     pub assoc_ident: Ident,
     pub rhs_ty: syn::Type,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct ConstraintChoiceMetrics {
+    pub constraint_sites: u32,
+    pub constraint_choice_sum: u32,
+}
+
+impl ConstraintChoiceMetrics {
+    fn trait_idents_from_bounds(bounds: &syn::punctuated::Punctuated<TypeParamBound, syn::token::Plus>) -> HashSet<String> {
+        bounds
+            .iter()
+            .filter_map(|b| match b {
+                TypeParamBound::Trait(tb) => tb.path.get_ident().map(|id| id.to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn where_bound_map(generics: &syn::Generics) -> HashMap<String, HashSet<String>> {
+        let mut out: HashMap<String, HashSet<String>> = HashMap::new();
+        let Some(where_clause) = &generics.where_clause else {
+            return out;
+        };
+
+        for pred in where_clause.predicates.iter() {
+            let WherePredicate::Type(tp) = pred else {
+                continue;
+            };
+            let syn::Type::Path(pty) = &tp.bounded_ty else {
+                continue;
+            };
+            let Some(ty_ident) = pty.path.get_ident() else {
+                continue;
+            };
+
+            let entry = out.entry(ty_ident.to_string()).or_default();
+            for b in tp.bounds.iter() {
+                if let TypeParamBound::Trait(tb) = b {
+                    if let Some(tr) = tb.path.get_ident() {
+                        entry.insert(tr.to_string());
+                    }
+                }
+            }
+        }
+
+        out
+    }
+
+    fn count_trait_choices(pool: &HashSet<String>, already: &HashSet<String>) -> u32 {
+        let n = pool.iter().filter(|t| !already.contains(*t)).count();
+        if n == 0 { 1 } else { n as u32 }
+    }
+
+    pub fn from_file(ast: &syn::File) -> Self {
+        let ttdn = TtdnInfo::from_file(ast);
+
+        // Trait pool used by choose_trait_prefer_custom (custom traits in the file).
+        let custom_traits: HashSet<String> = ttdn.traits.iter().map(|t| t.to_string()).collect();
+
+        // Helper for impl-self-type-specific pool: union(custom_traits, matching impl-edge traits).
+        let mut impl_edge_traits_by_self: HashMap<String, HashSet<String>> = HashMap::new();
+        for (ty, tr) in &ttdn.impl_edges {
+            impl_edge_traits_by_self
+                .entry(ty.to_string())
+                .or_default()
+                .insert(tr.to_string());
+        }
+
+        struct V<'a> {
+            custom_traits: &'a HashSet<String>,
+            impl_edge_traits_by_self: &'a HashMap<String, HashSet<String>>,
+            out: ConstraintChoiceMetrics,
+        }
+
+        impl<'ast> Visit<'ast> for V<'_> {
+            fn visit_item_trait(&mut self, i: &'ast ItemTrait) {
+                // Supertrait injection site: pick a trait (prefer custom), excluding self + already-present supertraits.
+                self.out.constraint_sites += 1;
+                let mut already = ConstraintChoiceMetrics::trait_idents_from_bounds(&i.supertraits);
+                already.insert(i.ident.to_string());
+                let choices = ConstraintChoiceMetrics::count_trait_choices(self.custom_traits, &already);
+                self.out.constraint_choice_sum += choices;
+
+                visit::visit_item_trait(self, i);
+            }
+
+            fn visit_item_impl(&mut self, i: &'ast ItemImpl) {
+                // Where-clause injection site: we approximate selectable constraints as the sum of
+                // available (TypeParam: Trait) choices over local type params (+ Self when identifiable).
+                self.out.constraint_sites += 1;
+
+                let mut total_choices: u32 = 0;
+                let where_bounds = ConstraintChoiceMetrics::where_bound_map(&i.generics);
+
+                // Local type parameters in impl generics.
+                for p in i.generics.params.iter() {
+                    let GenericParam::Type(tp) = p else { continue; };
+                    let already = where_bounds.get(&tp.ident.to_string()).cloned().unwrap_or_default();
+                    total_choices += ConstraintChoiceMetrics::count_trait_choices(self.custom_traits, &already);
+                }
+
+                // Self type (if it is a simple ident path).
+                if let Type::Path(tp) = &*i.self_ty {
+                    if let Some(self_ident) = tp.path.get_ident() {
+                        let mut pool: HashSet<String> = self.custom_traits.clone();
+                        if let Some(extra) = self.impl_edge_traits_by_self.get(&self_ident.to_string()) {
+                            for t in extra.iter() { pool.insert(t.clone()); }
+                        }
+                        let already = where_bounds.get(&self_ident.to_string()).cloned().unwrap_or_default();
+                        total_choices += ConstraintChoiceMetrics::count_trait_choices(&pool, &already);
+                    }
+                }
+
+                // If nothing was countable (no type params and no identifiable Self), fall back to 1.
+                if total_choices == 0 {
+                    total_choices = 1;
+                }
+                self.out.constraint_choice_sum += total_choices;
+
+                visit::visit_item_impl(self, i);
+            }
+
+            fn visit_generic_param(&mut self, i: &'ast GenericParam) {
+                // Generic bound injection site (type params only): count how many traits we could add.
+                if let GenericParam::Type(tp) = i {
+                    self.out.constraint_sites += 1;
+                    let already = ConstraintChoiceMetrics::trait_idents_from_bounds(&tp.bounds);
+                    let choices = ConstraintChoiceMetrics::count_trait_choices(self.custom_traits, &already);
+                    self.out.constraint_choice_sum += choices;
+                }
+                visit::visit_generic_param(self, i);
+            }
+
+            fn visit_trait_item_type(&mut self, i: &'ast syn::TraitItemType) {
+                // Associated type bound injection site.
+                self.out.constraint_sites += 1;
+                let already = ConstraintChoiceMetrics::trait_idents_from_bounds(&i.bounds);
+                let choices = ConstraintChoiceMetrics::count_trait_choices(self.custom_traits, &already);
+                self.out.constraint_choice_sum += choices;
+            }
+        }
+
+        let mut v = V {
+            custom_traits: &custom_traits,
+            impl_edge_traits_by_self: &impl_edge_traits_by_self,
+            out: ConstraintChoiceMetrics::default(),
+        };
+        v.visit_file(ast);
+        v.out
+    }
 }
 
 impl TtdnInfo {
@@ -155,75 +308,5 @@ impl TtdnInfo {
     pub fn any_constraint_pair(&self) -> Option<(Ident, Ident)> {
         let mut rng = rand::thread_rng();
         self.impl_edges.choose(&mut rng).cloned()
-    }
-
-    /// Complexity summary used by the Python driver for seed selection/stagnation.
-    ///
-    /// We build a directed graph over names:
-    /// - Type -> Trait edges from impls
-    /// - Trait -> Supertrait edges from inheritance
-    ///
-    /// Returns (max_depth, cycle_count).
-    pub fn complexity(&self) -> (u32, u32) {
-        use std::collections::{HashMap, HashSet};
-
-        let mut nodes: HashSet<String> = HashSet::new();
-        for t in &self.traits {
-            nodes.insert(t.to_string());
-        }
-        for ty in &self.types {
-            nodes.insert(ty.to_string());
-        }
-
-        let mut adj: HashMap<String, Vec<String>> = HashMap::new();
-        for (ty, tr) in &self.impl_edges {
-            adj.entry(ty.to_string()).or_default().push(tr.to_string());
-            nodes.insert(ty.to_string());
-            nodes.insert(tr.to_string());
-        }
-        for (tr, sup) in &self.supertrait_edges {
-            adj.entry(tr.to_string()).or_default().push(sup.to_string());
-            nodes.insert(tr.to_string());
-            nodes.insert(sup.to_string());
-        }
-
-        let mut visited: HashSet<String> = HashSet::new();
-        let mut stack: HashSet<String> = HashSet::new();
-        let mut max_depth: u32 = 0;
-        let mut cycles: u32 = 0;
-
-        fn dfs(
-            node: &str,
-            depth: u32,
-            adj: &HashMap<String, Vec<String>>,
-            visited: &mut HashSet<String>,
-            stack: &mut HashSet<String>,
-            max_depth: &mut u32,
-            cycles: &mut u32,
-        ) {
-            visited.insert(node.to_string());
-            stack.insert(node.to_string());
-            *max_depth = (*max_depth).max(depth);
-
-            if let Some(children) = adj.get(node) {
-                for child in children {
-                    if !visited.contains(child) {
-                        dfs(child, depth + 1, adj, visited, stack, max_depth, cycles);
-                    } else if stack.contains(child) {
-                        *cycles += 1;
-                    }
-                }
-            }
-
-            stack.remove(node);
-        }
-
-        for n in nodes.iter() {
-            if !visited.contains(n) {
-                dfs(n, 1, &adj, &mut visited, &mut stack, &mut max_depth, &mut cycles);
-            }
-        }
-
-        (max_depth, cycles)
     }
 }
