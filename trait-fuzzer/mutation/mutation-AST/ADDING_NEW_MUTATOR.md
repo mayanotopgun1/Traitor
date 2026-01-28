@@ -11,7 +11,7 @@ Every mutator consists of three components:
 ## 2. Step-by-Step Implementation
 
 ### Step 1: Define Structs
-In `src/mutators/structural.rs` or `src/mutators/non_structural.rs`, define your structures.
+In `src/mutators/Mutation_1.rs` (structural) or `src/mutators/Mutation_2.rs` (injection), define your structures.
 
 ```rust
 // The main unit struct for the mutator strategy

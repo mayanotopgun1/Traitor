@@ -1,6 +1,7 @@
 import shutil
 import os
 import argparse
+import json
 from pathlib import Path
 
 
@@ -31,12 +32,76 @@ def clean_directory(path):
     else:
         print(f"Directory {path} does not exist")
 
+
+def _load_config(config_path: Path) -> dict:
+    try:
+        with open(config_path, "r") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Failed to load config {config_path}: {e}")
+        return {}
+
+
+def clean_promoted_seeds(base_dir: Path, config: dict):
+    run_cfg = config.get("run", {})
+    paths_cfg = config.get("paths", {})
+    seeds_rel = paths_cfg.get("seeds", "seeds")
+    prefix = str(run_cfg.get("new_seeds_prefix", "new"))
+
+    seeds_dir = (base_dir / seeds_rel).resolve()
+    if not seeds_dir.exists() or not seeds_dir.is_dir():
+        print(f"Seeds directory {seeds_dir} does not exist")
+        return
+
+    removed_any = False
+    removed_dirs = []
+    for p in seeds_dir.iterdir():
+        if not p.is_dir():
+            continue
+        name = p.name
+        if not name.startswith(prefix):
+            continue
+        suffix = name[len(prefix):]
+        if not suffix.isdigit():
+            continue
+        # Remove only .rs files under promoted dirs, keep directories.
+        for f in p.rglob("*.rs"):
+            if f.is_file():
+                try:
+                    f.unlink()
+                    removed_any = True
+                except Exception as e:
+                    print(f"Failed to remove {f}: {e}")
+        # Remove empty directories left behind.
+        for child in sorted(p.rglob("*"), reverse=True):
+            if child.is_dir():
+                try:
+                    if not any(child.iterdir()):
+                        child.rmdir()
+                except Exception:
+                    pass
+        if not any(p.iterdir()):
+            try:
+                p.rmdir()
+            except Exception:
+                pass
+        if removed_any:
+            removed_dirs.append(p)
+    if not removed_any:
+        print("No promoted seeds found to clean")
+    else:
+        uniq = sorted({str(p) for p in removed_dirs})
+        for d in uniq:
+            print(f"Removed promoted dir {d}")
+
 def main():
     parser = argparse.ArgumentParser(description="Clean Trait-Fuzzer results")
     parser.add_argument("--all", action="store_true", help="Clean all results and logs")
+    parser.add_argument("--config", default="config.json", help="Path to configuration file")
     args = parser.parse_args()
 
     base_dir = Path(__file__).parent
+    config = _load_config(base_dir / args.config)
     
     clean_directory(base_dir / "results" / "success")
     clean_directory(base_dir / "results" / "error")
@@ -45,6 +110,9 @@ def main():
     
     if args.all:
         clean_directory(base_dir / "logs")
+
+    # Clean promoted seeds under seeds/<prefix><digits>/ based on config
+    clean_promoted_seeds(base_dir, config)
         
     # Clean fuzzer working-directory artifacts.
     # These are produced by rustc and/or the mutation pipeline when runs are interrupted.

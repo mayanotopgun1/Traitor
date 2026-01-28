@@ -6,8 +6,9 @@ use syn::{parse_file, File};
 
 mod mutators;
 mod ttdn;
-use mutators::structural::*;
-use mutators::non_structural::*;
+use mutators::Mutation_1::*;
+use mutators::Mutation_2::*;
+use mutators::Mutation_3::*;
 use mutators::framework::Mutator;
 
 #[derive(Parser, Debug)]
@@ -31,6 +32,14 @@ struct Args {
     /// Format: "MUTATION_CHOICE mode=<mode> count=<count> index=<index> mutated=<0|1>"
     #[arg(long, default_value_t = false)]
     emit_choice: bool,
+
+    /// Force a particular constraint choice index (0-based) within constraint_injection.
+    #[arg(long)]
+    constraint_index: Option<usize>,
+
+    /// Force a particular replacement-candidate index (0-based) within projection_rewrite.
+    #[arg(long)]
+    choice_index: Option<usize>,
 }
 
 fn main() {
@@ -54,9 +63,12 @@ fn main() {
     if args.mode.as_str() == "ttdn_metrics" {
         let info = crate::ttdn::TtdnInfo::from_file(&syntax_tree);
         let c = crate::ttdn::ConstraintChoiceMetrics::from_file(&syntax_tree);
+        let p = ProjectionRewriteMutator::projection_choice_metrics(&syntax_tree);
         let payload = serde_json::json!({
             "constraint_sites": c.constraint_sites,
             "constraint_choice_sum": c.constraint_choice_sum,
+            "rewrite_sites": p.rewrite_sites,
+            "rewrite_choice_sum": p.rewrite_choice_sum,
             "traits": info.traits.len(),
             "types": info.types.len(),
             "impl_edges": info.impl_edges.len(),
@@ -69,35 +81,101 @@ fn main() {
         return;
     }
 
-    let (mutated, chosen_index, candidate_count) = match args.mode.as_str() {
+    if args.mode.as_str() == "constraint_debug" {
+        let sites = ConstraintInjectionMutator::collect_sites_with_candidates(&syntax_tree);
+        println!("{}", serde_json::to_string(&sites).unwrap_or("[]".to_string()));
+        fs::write(&args.output, content).expect("Failed to write output file");
+        return;
+    }
+
+    if args.mode.as_str() == "constraint_debug_pretty" {
+        let sites = ConstraintInjectionMutator::collect_sites_with_candidates(&syntax_tree);
+        for s in sites {
+            println!("#{} [{}] {}", s.index, s.kind, s.label);
+            println!("  candidates: {}", s.candidates.len());
+            for c in s.candidates {
+                println!("    - {}", c);
+            }
+            println!();
+        }
+        fs::write(&args.output, content).expect("Failed to write output file");
+        return;
+    }
+
+    if args.mode.as_str() == "projection_debug_pretty" {
+        let sites = ProjectionRewriteMutator::collect_sites_with_candidates(&syntax_tree);
+        for s in sites {
+            println!("#{} [rewrite] {}", s.index, s.label);
+            println!("  candidates: {}", s.candidates.len());
+            for c in s.candidates {
+                println!("    - {}", c);
+            }
+            println!();
+        }
+        fs::write(&args.output, content).expect("Failed to write output file");
+        return;
+    }
+
+    let (mutated, chosen_index, candidate_count, constraint_count, chosen_constraint_index) = match args.mode.as_str() {
         // Structural
-        "add_assoc_type" => AddAssocTypeMutator.run_with_meta(&mut syntax_tree, args.index),
-        "add_trait" => AddTraitMutator.run_with_meta(&mut syntax_tree, args.index),
-        "add_impl" => AddImplMutator.run_with_meta(&mut syntax_tree, args.index),
-        "constraint_injection" => ConstraintInjectionMutator.run_with_meta(&mut syntax_tree, args.index),
+        "add_trait" => {
+            let (m, i, c) = AddTraitMutator.run_with_meta(&mut syntax_tree, args.index);
+            (m, i, c, 0, 0)
+        }
+        "add_impl" => {
+            let (m, i, c) = AddImplMutator.run_with_meta(&mut syntax_tree, args.index);
+            (m, i, c, 0, 0)
+        }
         
-        // Non-Structural
-        "bin_op_flip" => BinOpFlipMutator.run_with_meta(&mut syntax_tree, args.index),
-        "int_literal_change" => IntLiteralChangeMutator.run_with_meta(&mut syntax_tree, args.index),
-        "bool_flip" => BoolFlipMutator.run_with_meta(&mut syntax_tree, args.index),
-        "replace_by_constant" => ReplaceByConstantMutator.run_with_meta(&mut syntax_tree, args.index),
-        "inject_control_flow" => InjectControlFlowMutator.run_with_meta(&mut syntax_tree, args.index),
+        // Injection
+        "constraint_injection" => ConstraintInjectionMutator::run_with_meta_and_constraint(
+            &mut syntax_tree,
+            args.index,
+            args.constraint_index,
+        ),
+        "projection_rewrite" => ProjectionRewriteMutator::run_with_meta_and_choice(
+            &mut syntax_tree,
+            args.index,
+            args.choice_index,
+        ),
         
         _ => {
             eprintln!("Unknown mode: {}", args.mode);
-            (false, 0, 0)
+            (false, 0, 0, 0, 0)
         }
     };
 
     if args.emit_choice {
         let m = if mutated { 1 } else { 0 };
-        eprintln!(
-            "MUTATION_CHOICE mode={} count={} index={} mutated={}",
-            args.mode,
-            candidate_count,
-            chosen_index,
-            m
-        );
+        if args.mode.as_str() == "constraint_injection" {
+            eprintln!(
+                "MUTATION_CHOICE mode={} count={} index={} mutated={} choice_count={} choice_index={}",
+                args.mode,
+                candidate_count,
+                chosen_index,
+                m,
+                constraint_count,
+                chosen_constraint_index,
+            );
+        } else if args.mode.as_str() == "projection_rewrite" {
+            eprintln!(
+                "MUTATION_CHOICE mode={} count={} index={} mutated={} choice_count={} choice_index={}",
+                args.mode,
+                candidate_count,
+                chosen_index,
+                m,
+                constraint_count,
+                chosen_constraint_index,
+            );
+        } else {
+            eprintln!(
+                "MUTATION_CHOICE mode={} count={} index={} mutated={}",
+                args.mode,
+                candidate_count,
+                chosen_index,
+                m
+            );
+        }
     }
 
     if mutated {

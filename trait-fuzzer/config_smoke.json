@@ -1,0 +1,46 @@
+{
+    "fuzzer": {
+        "iterations": 2,
+        "mutations_per_seed": 1,
+        "injection_mutations_per_round": 1,
+        "projection_mutations_per_round": 1,
+        "structural_mutations_per_round": 1,
+        "seed_selection_strategy": "ttdn_metric",
+        "max_time_per_case_sec": 20,
+        "structural_subweights": {
+            "add_impl": 0.50,
+            "add_trait": 0.50
+        },
+        "max_promotions_per_seed": 2
+    },
+    "run": {
+        "structural_only": false,
+        "max_cases": null,
+        "max_results_gb": null,
+        "min_free_gb": null,
+
+        "keep_success_cases": 20,
+        "keep_error_cases": 20,
+
+        "promote_success": false,
+        "new_seeds_max": 50,
+        "new_seeds_prefix": "New"
+    },
+    "paths": {
+        "seeds": "seeds_smoke",
+        "results": "results",
+        "logs": "logs"
+    },
+    "compiler": {
+        "enable_next_trait_solver": false,
+        "enable_nightly_compile": false,
+        "rustc_cmd": ["rustc"],
+        "rustc_z_cmd": ["rustc", "+nightly"],
+        "next_trait_solver_flag": "-Znext-solver=globally"
+    },
+    "llm": {
+        "provider": "mock",
+        "model": "gpt-4",
+        "api_key_env": "OPENAI_API_KEY"
+    }
+}

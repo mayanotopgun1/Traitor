@@ -5,6 +5,41 @@ use syn::{GenericParam, Ident, ItemEnum, ItemImpl, ItemStruct, ItemTrait, TraitI
 
 use std::collections::{HashMap, HashSet};
 
+// =============================================================================
+// Constraint vocabulary (standard concepts)
+// =============================================================================
+/// A constraint *site* is a syntactic location where a new constraint can be injected.
+/// Examples: supertrait list, impl where-clause, generic param bounds, assoc type bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ConstraintSiteKind {
+    Supertrait,
+    ImplWhere,
+    GenericBound,
+    AssocBound,
+}
+
+/// A constraint site with a stable index (0-based in traversal order).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConstraintSite {
+    pub index: u32,
+    pub kind: ConstraintSiteKind,
+}
+
+/// The size of a constraint *set* at a site (number of candidate constraints).
+///
+/// IMPORTANT: constraint sets are *site-local* and *scope-aware*.
+/// For example, constraints that mention generic params are only available
+/// at sites whose scope contains those params.
+pub type ConstraintSetSize = u32;
+
+/// Total choice space across all sites: sum over sites of each site's constraint set size.
+/// This is the number of (site × constraint) combinations *after* scope filtering.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ConstraintChoiceSpace {
+    pub site_count: u32,
+    pub total_choices: u32,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct TtdnInfo {
     pub traits: Vec<Ident>,
@@ -12,6 +47,8 @@ pub struct TtdnInfo {
 
     // (Type implements Trait)
     pub impl_edges: Vec<(Ident, Ident)>,
+    // impl edges where Self is a generic parameter (blanket impls)
+    pub impl_edges_blanket: Vec<(Ident, Ident)>,
 
     // (Trait has supertrait)
     pub supertrait_edges: Vec<(Ident, Ident)>,
@@ -21,6 +58,9 @@ pub struct TtdnInfo {
 
     // impl Type: assoc bindings like `type Assoc = Ty;` inside `impl Trait for Type`.
     pub impl_assoc_bindings: Vec<ImplAssocBinding>,
+
+    // blanket impl templates like `impl<T> Trait for T` or `impl<T> Trait for Option<T>`.
+    pub impl_blanket_templates: Vec<BlanketImplTemplate>,
 }
 
 #[derive(Debug, Clone)]
@@ -31,10 +71,29 @@ pub struct ImplAssocBinding {
     pub rhs_ty: syn::Type,
 }
 
+#[derive(Debug, Clone)]
+pub struct BlanketImplTemplate {
+    pub self_ty: syn::Type,
+    pub trait_ident: Ident,
+    pub generic_params: Vec<Ident>,
+}
+
 #[derive(Debug, Default, Clone)]
 pub struct ConstraintChoiceMetrics {
+    /// Count of constraint *sites* in the AST (see ConstraintSiteKind).
     pub constraint_sites: u32,
+    /// Sum of constraint-set sizes across all sites.
+    /// This is the total number of (site × constraint) combinations, after scope filtering.
     pub constraint_choice_sum: u32,
+}
+
+impl ConstraintChoiceMetrics {
+    pub fn choice_space(&self) -> ConstraintChoiceSpace {
+        ConstraintChoiceSpace {
+            site_count: self.constraint_sites,
+            total_choices: self.constraint_choice_sum,
+        }
+    }
 }
 
 impl ConstraintChoiceMetrics {
@@ -188,6 +247,44 @@ impl TtdnInfo {
             info: TtdnInfo,
         }
 
+        fn impl_self_has_generics(self_ty: &Type, generics: &syn::Generics) -> bool {
+            let generic_idents: HashSet<Ident> = generics
+                .params
+                .iter()
+                .filter_map(|p| match p {
+                    GenericParam::Type(tp) => Some(tp.ident.clone()),
+                    _ => None,
+                })
+                .collect();
+            if generic_idents.is_empty() {
+                return false;
+            }
+
+            struct V {
+                generic_idents: HashSet<Ident>,
+                found: bool,
+            }
+
+            impl<'ast> Visit<'ast> for V {
+                fn visit_type_path(&mut self, i: &'ast syn::TypePath) {
+                    if let Some(id) = i.path.get_ident() {
+                        if self.generic_idents.contains(id) {
+                            self.found = true;
+                            return;
+                        }
+                    }
+                    visit::visit_type_path(self, i);
+                }
+            }
+
+            let mut v = V {
+                generic_idents,
+                found: false,
+            };
+            v.visit_type(self_ty);
+            v.found
+        }
+
         impl<'ast> Visit<'ast> for Collector {
             fn visit_item_trait(&mut self, i: &'ast ItemTrait) {
                 self.info.traits.push(i.ident.clone());
@@ -226,11 +323,34 @@ impl TtdnInfo {
             fn visit_item_impl(&mut self, i: &'ast ItemImpl) {
                 if let Some((_, trait_path, _)) = &i.trait_ {
                     if let Some(trait_ident) = trait_path.get_ident() {
+                        let generic_params: Vec<Ident> = i
+                            .generics
+                            .params
+                            .iter()
+                            .filter_map(|p| match p {
+                                GenericParam::Type(tp) => Some(tp.ident.clone()),
+                                _ => None,
+                            })
+                            .collect();
+                        let is_blanket = impl_self_has_generics(&i.self_ty, &i.generics);
+                        if is_blanket {
+                            self.info.impl_blanket_templates.push(BlanketImplTemplate {
+                                self_ty: (*i.self_ty).clone(),
+                                trait_ident: trait_ident.clone(),
+                                generic_params,
+                            });
+                        }
                         if let Type::Path(self_ty) = &*i.self_ty {
                             if let Some(type_ident) = self_ty.path.get_ident() {
+                                let is_generic_self = is_blanket;
                                 self.info
                                     .impl_edges
                                     .push((type_ident.clone(), trait_ident.clone()));
+                                if is_generic_self {
+                                    self.info
+                                        .impl_edges_blanket
+                                        .push((type_ident.clone(), trait_ident.clone()));
+                                }
 
                                 for impl_item in &i.items {
                                     if let syn::ImplItem::Type(assoc) = impl_item {
@@ -269,6 +389,21 @@ impl TtdnInfo {
             (ta.to_string(), tr_a.to_string()).cmp(&(tb.to_string(), tr_b.to_string()))
         });
         c.info.impl_edges.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+        c.info.impl_edges_blanket.sort_by(|(ta, tr_a), (tb, tr_b)| {
+            (ta.to_string(), tr_a.to_string()).cmp(&(tb.to_string(), tr_b.to_string()))
+        });
+        c.info.impl_edges_blanket.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+        c.info.impl_blanket_templates.sort_by(|a, b| {
+            (
+                a.self_ty.to_token_stream().to_string(),
+                a.trait_ident.to_string(),
+            )
+                .cmp(&(b.self_ty.to_token_stream().to_string(), b.trait_ident.to_string()))
+        });
+        c.info.impl_blanket_templates.dedup_by(|a, b| {
+            a.self_ty.to_token_stream().to_string() == b.self_ty.to_token_stream().to_string()
+                && a.trait_ident == b.trait_ident
+        });
         c.info.supertrait_edges.sort_by(|(t1, s1), (t2, s2)| {
             (t1.to_string(), s1.to_string()).cmp(&(t2.to_string(), s2.to_string()))
         });

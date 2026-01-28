@@ -1,0 +1,16 @@
+trait Trait {}
+trait Noop {
+    type Assoc: ?Sized + ;
+}
+impl<T: ?Sized> Noop for T
+where
+    <NoopNewtype<T> as Noop>::Assoc: Noop,
+{
+    type Assoc = T;
+}
+struct NoopNewtype<T: ?Sized + Noop>(T::Assoc);
+fn coerce_newtype<>() -> &NoopNewtype< Trait + '_> {
+    x
+}
+impl<T> Noop for NoopNewtype<T> {}
+fn main(){}

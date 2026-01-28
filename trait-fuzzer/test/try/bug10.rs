@@ -1,13 +1,13 @@
-pub struct View<A>(A);
-pub trait Data {
-    type Elem;
+trait Tr1{
+    type Assoc;
+};
+trait Tr2{};
+struct A;
+struct B;
+struct C;
+impl Tr1 for A{
+    type Assoc = B;
 }
-impl<'a, A> Data for View<&'a A> {
-    type Elem = A;
-}
-
-pub fn repro<'a, T>()
-where
-    <View<&'a T> as Data>::Elem: Sized,
-{
-}
+impl Tr2 for B{}
+impl Tr2 for C{}
+fn main(){}

@@ -5,6 +5,7 @@ import logging
 import argparse
 import random
 import shutil
+import signal
 import subprocess
 import time
 import tempfile
@@ -14,6 +15,9 @@ import hashlib
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor
+import multiprocessing
+
 
 from mutation.mutator_pool import MutatorPool
 from utils.compiler import RustCompiler, CompilationStatus
@@ -23,17 +27,28 @@ from LLM import LLMConnector, ExtractorAgent, InjectorAgent, RevisionAgent
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-def setup_logging(config):
+def setup_logging(config, worker_index: int = 0):
     log_dir = Path(config["paths"]["logs"])
     log_dir.mkdir(exist_ok=True)
+    
+    # Each worker gets its own log file
+    log_filename = f"fuzzer_worker_{worker_index}.log"
+    
+    # Configure logging with a specific format
     logging.basicConfig(
-        filename=log_dir / "fuzzer.log",
+        filename=log_dir / log_filename,
         level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s"
+        format=f"[Worker-{worker_index}] %(asctime)s - %(levelname)s - %(message)s",
+        force=True  # Reset any existing handlers
     )
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    logging.getLogger('').addHandler(console)
+    
+    # Also print to console usage (only if enabled, or ALWAYS for worker 0 as a sample)
+    if worker_index == 0 or config.get("fuzzer", {}).get("worker_console_logging", False):
+        console = logging.StreamHandler()
+        console.setLevel(logging.INFO)
+        console.setFormatter(logging.Formatter(f"[Worker-{worker_index}] %(message)s"))
+        logging.getLogger('').addHandler(console)
+
 
 def load_config(config_path):
     with open(config_path, 'r') as f:
@@ -79,15 +94,18 @@ def _sort_oldest_first(paths: List[Path]) -> List[Path]:
     return sorted(paths, key=lambda p: p.stat().st_mtime if p.exists() else now)
 
 
-def _prune_oldest(case_dirs: List[Path], max_keep: int, label: str):
+def _prune_oldest(case_dirs: List[Path], max_keep: int, label: str, log_first_only: bool = False):
     if max_keep < 0:
         return
     case_dirs[:] = _sort_oldest_first(case_dirs)
+    logged = False
     while len(case_dirs) > max_keep:
         victim = case_dirs.pop(0)
         try:
             shutil.rmtree(victim)
-            logging.info("Pruned old %s case: %s", label, victim)
+            if not log_first_only or not logged:
+                logging.info("Pruned old %s case: %s", label, victim)
+                logged = True
         except Exception as e:
             logging.warning("Failed to prune %s: %s", victim, e)
             break
@@ -105,8 +123,9 @@ def enforce_results_limits(
     min_free_gb: Optional[float],
     keep_success_cases: int,
     keep_error_cases: int,
+    keep_fate_cases: int,
 ) -> bool:
-    """Prune only SUCCESS/ERROR cases; never delete HANG/CRASH/FATE.
+    """Prune SUCCESS/ERROR/FATE cases; never delete HANG/CRASH unless covered by other limits.
 
     Returns True if safe to continue. If disk is still below min_free_gb after
     pruning prunable categories, returns False.
@@ -125,12 +144,19 @@ def enforce_results_limits(
         if len(success_dirs) > keep_success_cases:
             target = int(keep_success_cases * prune_watermark)
             target = min(target, keep_success_cases)
-            _prune_oldest(success_dirs, target, label="success")
+            _prune_oldest(success_dirs, target, label="success", log_first_only=True)
     if keep_error_cases >= 0:
         if len(error_dirs) > keep_error_cases:
             target = int(keep_error_cases * prune_watermark)
             target = min(target, keep_error_cases)
-            _prune_oldest(error_dirs, target, label="error")
+            _prune_oldest(error_dirs, target, label="error", log_first_only=True)
+
+    fate_dirs = by_status.get("fate", [])
+    if keep_fate_cases >= 0:
+        if len(fate_dirs) > keep_fate_cases:
+            target = int(keep_fate_cases * prune_watermark)
+            target = min(target, keep_fate_cases)
+            _prune_oldest(fate_dirs, target, label="fate", log_first_only=True)
 
     # 2) Global caps (apply ONLY to prunable categories: success+error)
     prunable_dirs = _sort_oldest_first(success_dirs + error_dirs)
@@ -141,11 +167,14 @@ def enforce_results_limits(
         else:
             target = max_cases
 
+        logged = False
         while len(prunable_dirs) > target:
             victim = prunable_dirs.pop(0)
             try:
                 shutil.rmtree(victim)
-                logging.info("Pruned old prunable case (max-cases): %s", victim)
+                if not logged:
+                    logging.info("Pruned old prunable case (max-cases): %s", victim)
+                    logged = True
             except Exception as e:
                 logging.warning("Failed to prune %s: %s", victim, e)
                 break
@@ -162,13 +191,16 @@ def enforce_results_limits(
         else:
             target_bytes = max_results_bytes
 
+        logged = False
         while prunable_dirs and prunable_size > target_bytes:
             victim = prunable_dirs.pop(0)
             try:
                 victim_size = _dir_size_bytes(victim)
                 shutil.rmtree(victim)
                 prunable_size = max(0, prunable_size - victim_size)
-                logging.info("Pruned old prunable case (max-results-gb): %s", victim)
+                if not logged:
+                    logging.info("Pruned old prunable case (max-results-gb): %s", victim)
+                    logged = True
             except Exception as e:
                 logging.warning("Failed to prune %s: %s", victim, e)
                 break
@@ -277,7 +309,7 @@ def parse_args_and_config(argv: Optional[List[str]] = None):
         "--all-strategies",
         dest="structural_only",
         action="store_false",
-        help="Enable non-structural + LLM forcing (original behavior)",
+        help="Enable injection + LLM forcing (original behavior)",
     )
 
     # Safety controls for long runs
@@ -313,6 +345,26 @@ def parse_args_and_config(argv: Optional[List[str]] = None):
         default=int(run_cfg.get("keep_error_cases", 2000)),
         help="How many ERROR cases to keep under results/error/ (oldest pruned)",
     )
+    parser.add_argument(
+        "--keep-fate-cases",
+        type=int,
+        default=int(run_cfg.get("keep_fate_cases", 100)),
+        help="How many FATE cases to keep under results/fate/ (oldest pruned)",
+    )
+
+    parser.set_defaults(detect_miscompilation=bool(run_cfg.get("detect_miscompilation", True)))
+    parser.add_argument(
+        "--detect-miscompilation",
+        dest="detect_miscompilation",
+        action="store_true",
+        help="Enable Miscompilation detection (nightly vs next-solver)",
+    )
+    parser.add_argument(
+        "--no-detect-miscompilation",
+        dest="detect_miscompilation",
+        action="store_false",
+        help="Disable Miscompilation detection (faster)",
+    )
 
     parser.set_defaults(promote_success=bool(run_cfg.get("promote_success", True)))
     parser.add_argument(
@@ -344,10 +396,13 @@ def parse_args_and_config(argv: Optional[List[str]] = None):
     return args, config
 
 class SeedSelector:
-    def __init__(self, seeds_dir: Path, fuzzer_cfg: Optional[dict] = None, promoted_prefix: str = "new"):
+    def __init__(self, seeds_dir: Path, fuzzer_cfg: Optional[dict] = None, promoted_prefix: str = "new", shard_index: int = 0, num_shards: int = 1):
         # Allow organizing seeds in subdirectories (e.g. imported official suites).
         self._seeds_dir = Path(seeds_dir)
         self._promoted_prefix = str(promoted_prefix or "new")
+        self._shard_index = shard_index
+        self._num_shards = max(1, num_shards)
+
 
         # Probability of sampling from the promoted pool first.
         # Default is aggressive base:promoted = 9:1.
@@ -361,16 +416,41 @@ class SeedSelector:
         self._promoted_seeds: set = set()
 
         all_seeds = list(seeds_dir.rglob("*.rs"))
-        self.seeds = [p for p in all_seeds if not self._is_internal_only_seed(p)]
+        # Sort for deterministic sharding
+        all_seeds.sort()
+        
+        # Filter internal-only seeds first, and also ignore empty files
+        valid_seeds = []
+        empty_count = 0
+        for p in all_seeds:
+            if not p.is_file():
+                continue
+            if p.stat().st_size == 0:
+                empty_count += 1
+                continue
+            if not self._is_internal_only_seed(p):
+                valid_seeds.append(p)
+
+        if empty_count > 0:
+            logging.warning("Ignored %d empty seed files (0 bytes)", empty_count)
+        
+        # Apply sharding
+        self.seeds = []
+        for i, seed in enumerate(valid_seeds):
+            if i % self._num_shards == self._shard_index:
+                self.seeds.append(seed)
+
         for p in self.seeds:
             if self._is_promoted_seed(p):
                 self._promoted_seeds.add(p)
-        filtered = len(all_seeds) - len(self.seeds)
+        
+        filtered = len(all_seeds) - len(valid_seeds)
         if filtered > 0:
             logging.info(
                 "Filtered %d seeds due to internal-only features (rustc_attrs/lang_items/intrinsics/etc.)",
                 filtered,
             )
+        logging.info(f"Worker {self._shard_index}/{self._num_shards}: Assigned {len(self.seeds)} seeds (total pool: {len(valid_seeds)})")
         self.scores: Dict[Path, int] = {}
         self._ttdn = TTDNModel()
         self._ttdn_cache = {}  # (path, mtime_ns) -> score(int)
@@ -383,6 +463,10 @@ class SeedSelector:
         self._min_weight = float(fuzzer_cfg.get("seed_min_weight", 1.0))
         self._repeat_window = int(fuzzer_cfg.get("seed_repeat_window", 32))
         self._max_picks_per_seed = fuzzer_cfg.get("seed_max_picks_per_seed", 1)
+        self._family_repeat_window = int(fuzzer_cfg.get("seed_family_repeat_window", 8))
+        self._family_pick_decay_beta = float(fuzzer_cfg.get("seed_family_pick_decay_beta", 0.75))
+        self._family_min_weight = float(fuzzer_cfg.get("seed_family_min_weight", 0.3))
+        self._pick_retry_limit = int(fuzzer_cfg.get("seed_pick_retry_limit", 16))
 
         if self._repeat_window < 0:
             self._repeat_window = 0
@@ -392,9 +476,22 @@ class SeedSelector:
             self._pick_decay_beta = 0.0
         if self._min_weight <= 0:
             self._min_weight = 1.0
+        if self._family_repeat_window < 0:
+            self._family_repeat_window = 0
+        if self._family_pick_decay_beta < 0:
+            self._family_pick_decay_beta = 0.0
+        if self._family_min_weight <= 0:
+            self._family_min_weight = 0.1
+        if self._pick_retry_limit <= 0:
+            self._pick_retry_limit = 1
 
+        # Seed pick tracking
         self._pick_counts: Dict[Path, int] = {}
-        self._recent: "collections.deque[Path]" = collections.deque(maxlen=self._repeat_window)
+        self._recent = collections.deque(maxlen=self._repeat_window)
+        self._family_pick_counts: Dict[str, int] = {}
+        self._family_recent = collections.deque(maxlen=self._family_repeat_window)
+        self._seed_family: Dict[Path, str] = {}
+        self._banned_families: set = set()
 
     @staticmethod
     def _is_internal_only_seed(seed_path: Path) -> bool:
@@ -490,7 +587,7 @@ class SeedSelector:
 
         return max(1, int(cached))
 
-    def add_seed(self, seed: Path):
+    def add_seed(self, seed: Path, family_id: Optional[str] = None):
         seed = Path(seed)
         if not seed.exists() or not seed.is_file() or seed.suffix != ".rs":
             return
@@ -501,6 +598,10 @@ class SeedSelector:
         self.seeds.append(seed)
         if self._is_promoted_seed(seed):
             self._promoted_seeds.add(seed)
+        if family_id:
+            self._seed_family[seed] = str(family_id)
+        else:
+            self._seed_family[seed] = self._infer_family_from_seed(seed)
         # If we've already initialized scoring, score this seed now (incremental, cheap).
         if self._scores_initialized or self.scores:
             try:
@@ -527,6 +628,11 @@ class SeedSelector:
         if not self.seeds:
             return []
 
+        # Drop seeds whose families are banned (fate-excluded).
+        eligible = [s for s in self.seeds if self._family_key(s) not in self._banned_families]
+        if not eligible:
+            return []
+
         # Enforce a simple budget per seed if configured.
         if self._max_picks_per_seed is not None:
             try:
@@ -534,9 +640,9 @@ class SeedSelector:
             except Exception:
                 max_picks = -1
             if max_picks >= 0:
-                return [s for s in self.seeds if self._pick_counts.get(s, 0) < max_picks]
+                return [s for s in eligible if self._pick_counts.get(s, 0) < max_picks]
 
-        return list(self.seeds)
+        return list(eligible)
 
     def _weight_for_seed(self, seed: Path) -> float:
         base = float(self.scores.get(seed, 1))
@@ -547,8 +653,13 @@ class SeedSelector:
         # Penalize repeatedly selected seeds to avoid being stuck.
         picked = float(self._pick_counts.get(seed, 0))
         decayed = shaped / math.pow(1.0 + picked, self._pick_decay_beta)
+        # Family-level suppression to avoid one lineage dominating.
+        family = self._family_key(seed)
+        fam_picks = float(self._family_pick_counts.get(family, 0))
+        fam_factor = 1.0 / math.pow(1.0 + fam_picks, self._family_pick_decay_beta)
+        fam_weight = max(self._family_min_weight, fam_factor)
 
-        return max(self._min_weight, decayed)
+        return max(self._min_weight, decayed) * fam_weight
 
     def _weighted_choice(self, candidates: List[Path]) -> Optional[Path]:
         if not candidates:
@@ -560,14 +671,52 @@ class SeedSelector:
         self._pick_counts[seed] = self._pick_counts.get(seed, 0) + 1
         if self._repeat_window > 0:
             self._recent.append(seed)
+        family = self._family_key(seed)
+        self._family_pick_counts[family] = self._family_pick_counts.get(family, 0) + 1
+        if self._family_repeat_window > 0:
+            self._family_recent.append(family)
+
+    def _family_key(self, seed: Path) -> str:
+        if seed in self._seed_family:
+            return self._seed_family[seed]
+        fam = self._infer_family_from_seed(seed)
+        self._seed_family[seed] = fam
+        return fam
+
+    def _infer_family_from_seed(self, seed: Path) -> str:
+        # If filename encodes family: <stem>__fam__<family>
+        try:
+            stem = seed.stem
+            if "__fam__" in stem:
+                return stem.split("__fam__", 1)[1]
+        except Exception:
+            pass
+        # Fallback: treat each original seed as its own family
+        return str(seed.resolve())
+
+    def get_family(self, seed: Path) -> str:
+        return self._family_key(seed)
+
+    def ban_family(self, family: str):
+        if family is None:
+            return
+        self._banned_families.add(str(family))
 
     def _candidates_within_window(self, eligible: List[Path]) -> List[Path]:
         if self._repeat_window <= 0 or len(eligible) <= 1:
-            return eligible
-        recent_set = set(self._recent)
-        candidates = [s for s in eligible if s not in recent_set]
-        # If all seeds are "recent", relax the constraint.
-        return candidates if candidates else eligible
+            seed_candidates = eligible
+        else:
+            recent_set = set(self._recent)
+            seed_candidates = [s for s in eligible if s not in recent_set]
+            # If all seeds are "recent", relax the constraint.
+            if not seed_candidates:
+                seed_candidates = eligible
+
+        if self._family_repeat_window <= 0 or len(seed_candidates) <= 1:
+            return seed_candidates
+        recent_families = set(self._family_recent)
+        fam_candidates = [s for s in seed_candidates if self._family_key(s) not in recent_families]
+        return fam_candidates if fam_candidates else seed_candidates
 
     def select(self, strategy="random"):
         if not self.seeds:
@@ -576,7 +725,7 @@ class SeedSelector:
         def _pick_with_retry(pick_fn):
             # Seeds under promoted pool can be pruned on disk (new_seeds_max). If we
             # still have stale paths in memory, drop them lazily and retry.
-            for _ in range(16):
+            for _ in range(self._pick_retry_limit):
                 picked = pick_fn()
                 if picked is None:
                     return None
@@ -629,16 +778,70 @@ class SeedSelector:
         self.scores.pop(seed, None)
         self._promoted_seeds.discard(seed)
         self._pick_counts.pop(seed, None)
+        family = self._seed_family.get(seed)
+        self._seed_family.pop(seed, None)
         if self._repeat_window > 0:
             try:
                 self._recent = collections.deque([s for s in self._recent if s != seed], maxlen=self._repeat_window)
             except Exception:
                 pass
+        # Best-effort cleanup for family tracking
+        if family is None:
+            try:
+                family = self._infer_family_from_seed(seed)
+            except Exception:
+                family = None
+        if family is not None:
+            self._family_pick_counts.pop(family, None)
+            if self._family_repeat_window > 0:
+                try:
+                    self._family_recent = collections.deque(
+                        [f for f in self._family_recent if f != family],
+                        maxlen=self._family_repeat_window,
+                    )
+                except Exception:
+                    pass
+def ensure_mutation_tool_built() -> Path:
+    """Builds the mutation-AST tool once and returns the path to the binary."""
+    logging.info("Building mutation tool (mutation-AST)...")
+    manifest_dir = Path("mutation/mutation-AST")
+    try:
+        # Build in release mode for performance.
+        # Use +nightly to handle unstable features and lockfile v4.
+        # Use RUSTFLAGS="-A warnings" to silence dead code/style warnings that annoy the user.
+        build_env = os.environ.copy()
+        build_env["RUSTFLAGS"] = "-A warnings"
+        
+        subprocess.run(
+            ["cargo", "+nightly", "build", "--release"], 
+            cwd=str(manifest_dir.resolve()),
+            check=True,
+            env=build_env
+        )
+    except subprocess.CalledProcessError as e:
+        logging.error(f"Failed to build mutation tool: {e.stderr}")
+        raise e
 
-def main():
+    # Windows adds .exe
+    bin_name = "mutation-ast"
+    if os.name == 'nt':
+        bin_name += ".exe"
+    
+    bin_path = manifest_dir / "target" / "release" / bin_name
+    if not bin_path.exists():
+        # Fallback to debug if release not found? Or maybe user built debug.
+        # But we explicitly asked for release above.
+        raise FileNotFoundError(f"Mutation tool binary not found at {bin_path}")
+        
+    logging.info(f"Mutation tool built successfully at {bin_path}")
+    return bin_path.resolve()
+
+def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
+
     try:
         args, config = parse_args_and_config()
-        setup_logging(config)
+        setup_logging(config, worker_index)
+
         logging.info("Trait-Fuzzer started with config: %s", args.config)
         
         # Initialize components
@@ -668,7 +871,8 @@ def main():
         seeds_dir = Path(config["paths"]["seeds"])
         results_dir = Path(config["paths"]["results"])
         
-        selector = SeedSelector(seeds_dir, fuzzer_cfg=config.get("fuzzer", {}), promoted_prefix=args.new_seeds_prefix)
+        selector = SeedSelector(seeds_dir, fuzzer_cfg=config.get("fuzzer", {}), promoted_prefix=args.new_seeds_prefix, shard_index=worker_index, num_shards=total_workers)
+
         if not selector.seeds:
             logging.warning("No seeds found in %s", seeds_dir)
             return
@@ -691,28 +895,43 @@ def main():
             min_free_gb=args.min_free_gb,
             keep_success_cases=args.keep_success_cases,
             keep_error_cases=args.keep_error_cases,
+            keep_fate_cases=args.keep_fate_cases,
         ):
             return
         
         # State tracking
         max_choice = {"constraint_choice_sum": 0}
-        stall_counter = 0
-        stall_threshold = config["fuzzer"]["stall_threshold"]
 
         # Promotion rate limit: each parent seed can contribute at most N SUCCESS mutants
         # into seeds/<newN>/ across the whole run.
         max_promotions_per_seed = int(config.get("fuzzer", {}).get("max_promotions_per_seed", 2))
         promotions_by_seed: Dict[Path, int] = {}
+        logged_promotion_cap: set = set()
 
         enable_next_solver = bool(compiler_cfg.get("enable_next_trait_solver", False))
         # If we enable next-solver, we almost always also want a plain nightly compile for comparison.
         enable_nightly_compile = bool(compiler_cfg.get("enable_nightly_compile", enable_next_solver))
         nightly_rustc_cmd = compiler_cfg.get("rustc_z_cmd", ["rustc", "+nightly"])
         next_solver_flag = compiler_cfg.get("next_trait_solver_flag", "-Znext-solver=coherence")
+        parallel_compile = bool(compiler_cfg.get("parallel_compile", False))
+        parallel_workers = int(compiler_cfg.get("parallel_workers", 3))
+        if parallel_compile:
+            logging.info("Parallel compile enabled (workers=%d)", parallel_workers)
 
         # Config Parameters
         iterations = config["fuzzer"]["iterations"]
-        mutations_per_seed = config["fuzzer"].get("mutations_per_seed", 1)
+        mutations_per_seed = int(config["fuzzer"].get("mutations_per_seed", 1))
+        injection_mutations_per_round = int(
+            config["fuzzer"].get("injection_mutations_per_round", 1)
+        )
+        projection_mutations_per_round = int(
+            config["fuzzer"].get("projection_mutations_per_round", injection_mutations_per_round)
+        )
+        structural_mutations_per_round = int(
+            config["fuzzer"].get("structural_mutations_per_round", 1)
+        )
+        mutation_max_retries = int(config["fuzzer"].get("mutation_max_retries", 10))
+        choice_pick_tries = int(config["fuzzer"].get("choice_pick_tries", 20))
         seed_strategy = config["fuzzer"].get("seed_selection_strategy", "random")
 
         # Fuzzing Loop
@@ -724,25 +943,39 @@ def main():
             if seed_path is None:
                 logging.warning("No usable seeds available")
                 return
+            if not Path(seed_path).exists():
+                selector.remove_seed(Path(seed_path))
+                logging.info("Selected seed missing on disk; skipping iteration %d", i + 1)
+                continue
             
             # Read seed content once
-            with open(seed_path, 'r', encoding='utf-8') as f:
+            abs_seed_path = seed_path.resolve()
+            if not abs_seed_path.exists():
+                logging.error(f"Seed file not found: {abs_seed_path}")
+                continue
+            
+            with open(abs_seed_path, 'r', encoding='utf-8') as f:
                 seed_content = f.read()
+            logging.info(f"Read seed {abs_seed_path} (size={len(seed_content)})")
+
+            current_seed_content = seed_content
 
             parent_key = seed_path.resolve()
+            ancestor_family = selector.get_family(seed_path)
 
             # Baseline compilation for the original seed (lazy).
             # Used only to decide whether CRASH/HANG variants should be classified as "fate"
             # (i.e., the seed already CRASH/HANGs before mutation).
             seed_baseline_results = None
             seed_is_fate: Optional[bool] = None
+            seed_is_miscompilation: Optional[bool] = None
 
             def _compile_seed_baseline() -> Dict[str, object]:
                 nonlocal seed_baseline_results
                 if seed_baseline_results is not None:
                     return seed_baseline_results
 
-                baseline_src = Path(f"temp_seed_baseline_iter_{i+1}.rs")
+                baseline_src = Path(f"temp_seed_baseline_w{worker_index}_iter_{i+1}.rs")
                 with open(baseline_src, "w") as f:
                     f.write(seed_content)
 
@@ -800,6 +1033,39 @@ def main():
                     seed_is_fate = False
                     return False
 
+            def _is_seed_miscompilation() -> bool:
+                """A seed is 'miscompilation' if baseline nightly vs next-solver disagree (SUCCESS vs ERROR)."""
+                nonlocal seed_is_miscompilation
+                if seed_is_miscompilation is not None:
+                    return seed_is_miscompilation
+                
+                # Check config flag first
+                if not args.detect_miscompilation:
+                    seed_is_miscompilation = False
+                    return False
+
+                if not (enable_nightly_compile and enable_next_solver):
+                    seed_is_miscompilation = False
+                    return False
+                try:
+                    base = _compile_seed_baseline()
+                    rn = base.get("nightly")
+                    rx = base.get("next")
+                    if rn is None or rx is None:
+                        seed_is_miscompilation = False
+                        return False
+                    nst = rn.status
+                    xst = rx.status
+                    seed_is_miscompilation = (
+                        nst in (CompilationStatus.SUCCESS, CompilationStatus.ERROR)
+                        and xst in (CompilationStatus.SUCCESS, CompilationStatus.ERROR)
+                        and nst != xst
+                    )
+                    return bool(seed_is_miscompilation)
+                except Exception:
+                    seed_is_miscompilation = False
+                    return False
+
             try:
                 rel = seed_path.relative_to(seeds_dir)
                 rel_s = str(rel)
@@ -812,478 +1078,674 @@ def main():
             # This is per selected seed (per outer iteration) to keep memory bounded.
             seen_mutations_by_strategy: Dict[str, set] = {}
 
-            # Avoid repeatedly sampling the same mutation *point* inside the AST mutators.
-            # Keyed by mutator strategy name; values are 0-based candidate indices already tried.
-            used_indices_by_strategy: Dict[str, set] = {}
-            # Keyed by strategy name; values are total candidate count reported by mutation-AST.
-            known_candidate_counts: Dict[str, int] = {}
-            # Leaf strategies that have no remaining mutation points for this seed.
-            exhausted_strategies: set = set()
+            # Note: mutation-point/constraint consumption is reset per round (see inside round loop).
 
-            def _enabled_leaf_strategies() -> List[str]:
-                # Determine which leaf strategies may be selected (given current mutator_pool settings).
-                top_enabled = {
-                    s for (s, p) in zip(getattr(mutator_pool, "strategies", []), getattr(mutator_pool, "probs", []))
-                    if float(p) > 0.0
-                }
-                leaf: List[str] = []
-
-                if "ast_structural" in top_enabled:
-                    ops = list(getattr(mutator_pool, "structural_ops", []))
-                    subw = getattr(mutator_pool, "structural_subweights", {}) or {}
-                    # Match MutatorPool semantics: if all zeros/missing, fall back to all ops.
-                    active = [op for op in ops if float(subw.get(op, 0.0)) > 0.0]
-                    leaf.extend(active if active else ops)
-
-                if "ast_non_structural" in top_enabled:
-                    leaf.extend([
-                        "bin_op_flip",
-                        "int_literal_change",
-                        "bool_flip",
-                        "replace_by_constant",
-                        "inject_control_flow",
-                    ])
-
-                if "llm_injection" in top_enabled:
-                    leaf.append("llm_injection")
-
-                # De-dup, preserve order.
-                out: List[str] = []
-                for s in leaf:
-                    if s not in out:
-                        out.append(s)
-                return out
-
-            def _select_strategy_avoiding_exhausted() -> Optional[str]:
-                enabled = _enabled_leaf_strategies()
-                candidates = [s for s in enabled if s not in exhausted_strategies]
-                if not candidates:
+            def _pick_structural_op() -> Optional[str]:
+                ops = list(getattr(mutator_pool, "structural_ops", []))
+                if not ops:
                     return None
+                subw = getattr(mutator_pool, "structural_subweights", {}) or {}
+                weights = [float(subw.get(op, 0.0)) for op in ops]
+                if not any(w > 0 for w in weights):
+                    weights = [1.0] * len(ops)
+                return random.choices(ops, weights=weights, k=1)[0]
 
-                # Prefer the configured distribution, but fall back to a remaining candidate.
-                for _ in range(20):
-                    s = mutator_pool.select_strategy()
-                    if s not in exhausted_strategies:
-                        return s
-                return random.choice(candidates)
+            # 2. Variants Loop: each seed runs `mutations_per_seed` rounds.
+            # Each round: N constraint_injection, then one structural mutation(s).
+            variant_index = 0
+            rounds = max(0, mutations_per_seed)
+            skip_seed_due_to_parse = False
+            skip_remaining_rounds = False
+            for _round in range(rounds):
+                if skip_seed_due_to_parse or skip_remaining_rounds:
+                    break
+                # Avoid repeatedly sampling the same mutation *point* inside the AST mutators (per round).
+                # Keyed by mutator strategy name; values are 0-based candidate indices already tried.
+                used_indices_by_strategy: Dict[str, set] = {}
+                # Keyed by strategy name; values are total candidate count reported by mutation-AST.
+                known_candidate_counts: Dict[str, int] = {}
+                # Constraint candidate counts per site for constraint_injection (per round).
+                known_constraint_counts: Dict[int, int] = {}
+                used_constraints_by_site: Dict[int, set] = {}
+                # Leaf strategies that have no remaining mutation points for this round.
+                exhausted_strategies: set = set()
+                exhausted_in_round: set = set()
+                logged_strategy_start: set = set()
+                round_seed_content = current_seed_content
+                round_seed_path = seed_path
+                round_seed_temp: Optional[Path] = None
+                if round_seed_content != seed_content:
+                    round_seed_temp = Path(f"temp_round_seed_w{worker_index}_iter_{i+1}_round_{_round+1}.rs")
+                    round_seed_temp.write_text(round_seed_content, encoding="utf-8", errors="ignore")
+                    round_seed_path = round_seed_temp
+                logging.info("-" * 60)
+                logging.info("round %d/%d (base=%s)", _round + 1, rounds, round_seed_path.name)
+                try:
+                    round_complexity = ttdn_model.calculate_complexity_for_file(round_seed_path)
+                    round_constraint_sites = int(round_complexity.extra.get("constraint_sites", 0))
+                    round_constraint_choice = int(round_complexity.extra.get("constraint_choice_sum", 0))
+                    round_rewrite_sites = int(round_complexity.extra.get("rewrite_sites", 0))
+                    round_rewrite_choice = int(round_complexity.extra.get("rewrite_choice_sum", 0))
+                    logging.info(
+                        "mutationⅡ: choice=%d sites=%d",
+                        round_constraint_choice,
+                        round_constraint_sites,
+                    )
+                    logging.info(
+                        "mutationⅢ: choice=%d sites=%d",
+                        round_rewrite_choice,
+                        round_rewrite_sites,
+                    )
+                except Exception:
+                    pass
 
-            # 2. Variants Loop
-            for j in range(mutations_per_seed):
-                variant_id = f"iter_{i+1}_var_{j+1}"
-                
-                # ------------------------------------------------------------------
-                # Robust Mutation & Compilation Loop
-                # ------------------------------------------------------------------
-                max_retries = 10
-                mutated_content = None
-                current_strategy = None
-                inapplicable_retries = 0
-                skip_iteration_due_to_inapplicable = False
+                planned_strategies: List[str] = []
+                if not args.structural_only:
+                    for _ in range(max(0, injection_mutations_per_round)):
+                        planned_strategies.append("constraint_injection")
+                    for _ in range(max(0, projection_mutations_per_round)):
+                        planned_strategies.append("projection_rewrite")
+                for _ in range(max(0, structural_mutations_per_round)):
+                    s = _pick_structural_op()
+                    if s is not None:
+                        planned_strategies.append(s)
 
-                def _is_duplicate_mutation(strategy: str, content: str) -> bool:
-                    if not strategy or content is None:
+                for planned in planned_strategies:
+                    if skip_seed_due_to_parse:
+                        break
+                    if planned in exhausted_in_round:
+                        continue
+                    variant_index += 1
+                    variant_id = f"w{worker_index}_iter_{i+1}_var_{variant_index}"
+
+
+                    # ------------------------------------------------------------------
+                    # Robust Mutation & Compilation Loop
+                    # ------------------------------------------------------------------
+                    max_retries = mutation_max_retries
+                    mutated_content = None
+                    current_strategy = None
+                    inapplicable_retries = 0
+                    skip_iteration_due_to_inapplicable = False
+                    skip_inapplicable_reason = None
+
+                    def _is_duplicate_mutation(strategy: str, content: str) -> bool:
+                        if not strategy or content is None:
+                            return False
+                        h = hashlib.sha256(content.encode("utf-8", errors="ignore")).hexdigest()
+                        seen = seen_mutations_by_strategy.setdefault(strategy, set())
+                        if h in seen:
+                            return True
+                        seen.add(h)
                         return False
-                    h = hashlib.sha256(content.encode("utf-8", errors="ignore")).hexdigest()
-                    seen = seen_mutations_by_strategy.setdefault(strategy, set())
-                    if h in seen:
-                        return True
-                    seen.add(h)
-                    return False
-                
-                # A. Mutation Retry Loop
-                for attempt in range(max_retries):
-                    try:
-                        # 1. Adaptive Strategy Selection
-                        if stall_counter >= stall_threshold:
-                            # When stalled, we normally force LLM injection.
-                            # In structural-only mode, keep selecting structural strategies.
-                            if args.structural_only:
-                                current_strategy = mutator_pool.select_strategy()
-                            else:
-                                current_strategy = "llm_injection"
-                                # Only warn once per stalled variant
-                                if attempt == 0:
-                                    logging.warning(
-                                        f"[{variant_id}] Stagnation detected (Stall: {stall_counter}). Forcing LLM Strategy."
-                                    )
-                            stall_counter = 0
-                        else:
-                            current_strategy = _select_strategy_avoiding_exhausted()
 
-                        if current_strategy is None:
-                            logging.warning(
-                                f"[{variant_id}] All enabled strategies are exhausted for this seed; stopping further variants."
-                            )
-                            skip_iteration_due_to_inapplicable = True
-                            break
-                        
-                        # Log strategy
-                        suffix = f" (Retry {attempt})" if attempt > 0 else ""
-                        logging.info(f"  -> Variant {j+1}{suffix}: Strategy {current_strategy}")
-
-                        # 2. Perform Mutation
-                        if current_strategy == "llm_injection":
-                            topology = extractor.extract_topology(seed_content)
-                            mutated_content = injector.inject_topology(seed_content, topology)
-                            if mutated_content is not None and _is_duplicate_mutation(current_strategy, mutated_content):
-                                logging.info(
-                                    f"    [Dup] Strategy {current_strategy} produced identical mutant; skipping this variant."
+                    # A. Mutation Retry Loop
+                    logged_retry: set = set()
+                    for attempt in range(max_retries):
+                        try:
+                            current_strategy = planned
+                            if current_strategy is None:
+                                logging.warning(
+                                    f"[{variant_id}] No planned strategy available; stopping further variants."
                                 )
-                                mutated_content = None
-                                inapplicable_retries += 1
-                                if inapplicable_retries >= max_retries:
-                                    logging.warning(
-                                        f"[{variant_id}] Duplicate mutant hit max retries ({max_retries}); skipping this iteration."
+                                skip_iteration_due_to_inapplicable = True
+                                break
+
+                            # Log strategy (once per variant)
+                            if attempt == 0:
+                                is_injection = current_strategy == "constraint_injection"
+                                is_projection = current_strategy == "projection_rewrite"
+                                if is_injection and "constraint_injection" not in logged_strategy_start:
+                                    logged_strategy_start.add("constraint_injection")
+                                    color = "\033[38;5;217m"  # light pink
+                                    reset = "\033[0m"
+                                    logging.info(f"{color}MutationⅡ started{reset}")
+                                if is_projection and "projection_rewrite" not in logged_strategy_start:
+                                    logged_strategy_start.add("projection_rewrite")
+                                    color = "\033[33m"  # yellow
+                                    reset = "\033[0m"
+                                    logging.info(f"{color}MutationⅢ started{reset}")
+                                if not is_injection and not is_projection:
+                                    mutation_label = "MutationⅠ"
+                                    color = "\033[34m"
+                                    reset = "\033[0m"
+                                    logging.info(
+                                        f"{color}{mutation_label}{reset} -> Variant {variant_index}: Strategy {current_strategy}"
                                     )
-                                    skip_iteration_due_to_inapplicable = True
-                                    break
-                                continue
-                            break
-                        
-                        elif current_strategy == "ast_non_structural_noop":
-                           stall_counter += 1
-                           mutated_content = None
-                           # Force retry by continuing? No, this strategy specifically means do nothing?
-                           # If noop is selected, we skip.
-                           inapplicable_retries += 1
-                           if inapplicable_retries >= max_retries:
-                               logging.warning(
-                                   f"[{variant_id}] Strategy inapplicable hit max retries ({max_retries}); skipping this iteration."
-                               )
-                               skip_iteration_due_to_inapplicable = True
-                               break
-                           continue 
 
-                        else: 
-                            # Rust AST Mutation
-                            rust_mode = current_strategy
-                            bin_dir = Path("mutation/mutation-AST") 
-                            with tempfile.TemporaryDirectory(prefix=f"trait_fuzzer_mut_{variant_id}_") as td:
-                                output_temp = Path(td) / "mutant.rs"
-
-                                # If we already know this mutator's candidate count for this seed,
-                                # pick an unseen index to avoid re-sampling the same mutation point.
-                                forced_index = None
-                                cand_count = known_candidate_counts.get(current_strategy)
-                                if cand_count is not None:
-                                    used = used_indices_by_strategy.setdefault(current_strategy, set())
-                                    if len(used) >= cand_count:
-                                        exhausted_strategies.add(current_strategy)
-                                        inapplicable_retries += 1
-                                        logging.info(
-                                            f"    [Exhausted] Strategy {current_strategy} has no remaining mutation points (count={cand_count}); retrying..."
+                            # 2. Perform Mutation
+                            if current_strategy == "llm_injection":
+                                topology = extractor.extract_topology(round_seed_content)
+                                mutated_content = injector.inject_topology(round_seed_content, topology)
+                                if mutated_content is not None and _is_duplicate_mutation(current_strategy, mutated_content):
+                                    logging.info(
+                                        f"    [Dup] Strategy {current_strategy} produced identical mutant; skipping this variant."
+                                    )
+                                    mutated_content = None
+                                    inapplicable_retries += 1
+                                    if inapplicable_retries >= max_retries:
+                                        logging.warning(
+                                            f"[{variant_id}] Duplicate mutant hit max retries ({max_retries}); skipping this iteration."
                                         )
+                                        skip_iteration_due_to_inapplicable = True
+                                        break
+                                    continue
+                                break
+
+                            else:
+                                # Rust AST Mutation
+                                rust_mode = current_strategy
+                                bin_dir = Path("mutation/mutation-AST")
+                                with tempfile.TemporaryDirectory(prefix=f"trait_fuzzer_mut_{variant_id}_") as td:
+                                    output_temp = Path(td) / "mutant.rs"
+
+                                    # If we already know this mutator's candidate count for this seed,
+                                    # pick an unseen index to avoid re-sampling the same mutation point.
+                                    forced_index = None
+                                    cand_count = known_candidate_counts.get(current_strategy)
+                                    if cand_count is not None:
+                                        if cand_count <= 0:
+                                            exhausted_strategies.add(current_strategy)
+                                            exhausted_in_round.add(current_strategy)
+                                            logging.info(
+                                                "    [Exhausted] Strategy %s has no remaining mutation points (count=%d); skipping",
+                                                current_strategy,
+                                                cand_count,
+                                            )
+                                            skip_iteration_due_to_inapplicable = True
+                                            break
+                                        used = used_indices_by_strategy.setdefault(current_strategy, set())
+                                        if len(used) >= cand_count:
+                                            exhausted_strategies.add(current_strategy)
+                                            exhausted_in_round.add(current_strategy)
+                                            inapplicable_retries += 1
+                                            key = (variant_id, current_strategy, "exhausted")
+                                            if key not in logged_retry:
+                                                action = "skipping" if current_strategy in ("constraint_injection", "add_trait", "add_impl") else "retrying"
+                                                logging.info(
+                                                    f"    [Exhausted] Strategy {current_strategy} has no remaining mutation points (count={cand_count}); {action}..."
+                                                )
+                                                logged_retry.add(key)
+                                            if current_strategy in ("constraint_injection", "add_trait", "add_impl"):
+                                                skip_iteration_due_to_inapplicable = True
+                                                skip_inapplicable_reason = "exhausted"
+                                                break
+                                            if inapplicable_retries >= max_retries:
+                                                logging.warning(
+                                                    f"[{variant_id}] Strategy inapplicable hit max retries ({max_retries}); skipping this iteration."
+                                                )
+                                                skip_iteration_due_to_inapplicable = True
+                                                break
+                                            continue
+
+                                        # Choose a random unused index.
+                                        for _ in range(choice_pick_tries):
+                                            idx = random.randrange(cand_count)
+                                            if idx not in used:
+                                                forced_index = idx
+                                                break
+                                        if forced_index is None:
+                                            remaining = [k for k in range(cand_count) if k not in used]
+                                            forced_index = random.choice(remaining)
+
+                                    cmd = [
+                                        str(mutation_bin_path),
+                                        "--input", str(round_seed_path.absolute()),
+                                        "--output", str(output_temp.absolute()),
+                                        "--mode", rust_mode,
+                                        "--emit-choice",
+                                    ]
+
+                                    # If constraint_injection, use global choice index.
+                                    if current_strategy == "constraint_injection" and forced_index is not None:
+                                        cmd.extend(["--constraint-index", str(forced_index)])
+
+                                    # If projection_rewrite, use global choice index.
+                                    if current_strategy == "projection_rewrite" and forced_index is not None:
+                                        cmd.extend(["--choice-index", str(forced_index)])
+
+                                    if forced_index is not None and current_strategy not in (
+                                        "constraint_injection",
+                                        "projection_rewrite",
+                                    ):
+                                        cmd.extend(["--index", str(forced_index)])
+
+                                    proc = subprocess.run(
+                                        cmd,
+                                        cwd=str(bin_dir.absolute()),
+                                        check=True,         # Will raise CalledProcessError on non-zero exit
+                                        capture_output=True,
+                                        text=True,
+                                        encoding="utf-8",
+                                        errors="replace",
+                                    )
+
+                                    # Record which mutation point was actually sampled.
+                                    try:
+                                        m = re.search(
+                                            r"MUTATION_CHOICE\s+mode=(\S+)\s+count=(\d+)\s+index=(\d+)\s+mutated=(\d+)",
+                                            proc.stderr,
+                                        )
+                                        if m is not None:
+                                            count = int(m.group(2))
+                                            index = int(m.group(3))
+                                            if current_strategy not in ("constraint_injection", "projection_rewrite"):
+                                                known_candidate_counts[current_strategy] = count
+                                                used_set = used_indices_by_strategy.setdefault(current_strategy, set())
+                                                used_set.add(index)
+                                                if count > 0 and len(used_set) >= count:
+                                                    exhausted_strategies.add(current_strategy)
+                                        # Parse choice_count/choice_index if present.
+                                        if current_strategy == "constraint_injection":
+                                            m2 = re.search(
+                                                r"choice_count=(\d+)\s+choice_index=(\d+)",
+                                                proc.stderr,
+                                            )
+                                            if m2 is not None:
+                                                ccount = int(m2.group(1))
+                                                cidx = int(m2.group(2))
+                                                known_candidate_counts[current_strategy] = ccount
+                                                used_indices_by_strategy.setdefault(current_strategy, set()).add(cidx)
+                                        # Parse choice_count/choice_index if present (projection_rewrite).
+                                        if current_strategy == "projection_rewrite":
+                                            m3 = re.search(
+                                                r"choice_count=(\d+)\s+choice_index=(\d+)",
+                                                proc.stderr,
+                                            )
+                                            if m3 is not None:
+                                                pcount = int(m3.group(1))
+                                                pidx = int(m3.group(2))
+                                                known_candidate_counts[current_strategy] = pcount
+                                                used_indices_by_strategy.setdefault(current_strategy, set()).add(pidx)
+                                    except Exception:
+                                        # Best-effort only; falling back to hash-based dedup is fine.
+                                        pass
+
+                                    # If syn cannot parse this seed, blacklist it and move on.
+                                    if "Parse failed:" in proc.stderr:
+                                        logging.warning(
+                                            f"[{variant_id}] Seed not parseable by syn; skipping: {round_seed_path.name}"
+                                        )
+                                        if round_seed_path == seed_path:
+                                            bad_seeds.add(seed_path)
+                                            selector.remove_seed(seed_path)
+                                        mutated_content = None
+                                        skip_seed_due_to_parse = True
+                                        skip_iteration_due_to_inapplicable = True
+                                        break
+
+                                    # Check for No-Op
+                                    if "No mutation performed" in proc.stderr:
+                                        if current_strategy in ("add_trait", "add_impl", "constraint_injection"):
+                                            exhausted_in_round.add(current_strategy)
+                                            logging.info(
+                                                f"    [No-Op] Strategy {current_strategy} produced no mutation; skipping without retry."
+                                            )
+                                            skip_iteration_due_to_inapplicable = True
+                                            skip_inapplicable_reason = "noop"
+                                            break
+                                        inapplicable_retries += 1
+                                        key = (variant_id, current_strategy, "noop")
+                                        if key not in logged_retry:
+                                            logging.info(
+                                                f"    [No-Op] Strategy {current_strategy} inapplicable. Retrying..."
+                                            )
+                                            logged_retry.add(key)
                                         if inapplicable_retries >= max_retries:
                                             logging.warning(
                                                 f"[{variant_id}] Strategy inapplicable hit max retries ({max_retries}); skipping this iteration."
                                             )
                                             skip_iteration_due_to_inapplicable = True
                                             break
-                                        continue
+                                        continue  # Retry loop
 
-                                    # Choose a random unused index.
-                                    for _ in range(20):
-                                        idx = random.randrange(cand_count)
-                                        if idx not in used:
-                                            forced_index = idx
-                                            break
-                                    if forced_index is None:
-                                        remaining = [k for k in range(cand_count) if k not in used]
-                                        forced_index = random.choice(remaining)
+                                    # Success case
+                                    if output_temp.exists():
+                                        with open(output_temp, 'r') as f:
+                                            mutated_content = f.read()
 
-                                cmd = [
-                                    "cargo", "run", "--quiet", "--",
-                                    "--input", str(seed_path.absolute()),
-                                    "--output", str(output_temp.absolute()),
-                                    "--mode", rust_mode,
-                                    "--emit-choice",
-                                ]
-
-                                if forced_index is not None:
-                                    cmd.extend(["--index", str(forced_index)])
-
-                                proc = subprocess.run(
-                                    cmd,
-                                    cwd=str(bin_dir.absolute()),
-                                    check=True,         # Will raise CalledProcessError on non-zero exit
-                                    capture_output=True,
-                                    text=True,
-                                )
-
-                                # Record which mutation point was actually sampled.
-                                try:
-                                    m = re.search(
-                                        r"MUTATION_CHOICE\s+mode=(\S+)\s+count=(\d+)\s+index=(\d+)\s+mutated=(\d+)",
-                                        proc.stderr,
-                                    )
-                                    if m is not None:
-                                        count = int(m.group(2))
-                                        index = int(m.group(3))
-                                        known_candidate_counts[current_strategy] = count
-                                        used_set = used_indices_by_strategy.setdefault(current_strategy, set())
-                                        used_set.add(index)
-                                        if count > 0 and len(used_set) >= count:
-                                            exhausted_strategies.add(current_strategy)
-                                except Exception:
-                                    # Best-effort only; falling back to hash-based dedup is fine.
-                                    pass
-
-                                # If syn cannot parse this seed, blacklist it and move on.
-                                if "Parse failed:" in proc.stderr:
-                                    logging.warning(
-                                        f"[{variant_id}] Seed not parseable by syn; skipping: {seed_path.name}"
-                                    )
-                                    bad_seeds.add(seed_path)
-                                    selector.remove_seed(seed_path)
-                                    mutated_content = None
-                                    break
-
-                                # Check for No-Op
-                                if "No mutation performed" in proc.stderr:
-                                    inapplicable_retries += 1
-                                    logging.info(
-                                        f"    [No-Op] Strategy {current_strategy} inapplicable. Retrying..."
-                                    )
-                                    if inapplicable_retries >= max_retries:
-                                        logging.warning(
-                                            f"[{variant_id}] Strategy inapplicable hit max retries ({max_retries}); skipping this iteration."
-                                        )
-                                        skip_iteration_due_to_inapplicable = True
-                                        break
-                                    continue  # Retry loop
-
-                                # Success case
-                                if output_temp.exists():
-                                    with open(output_temp, 'r') as f:
-                                        mutated_content = f.read()
-
-                                    if mutated_content is not None and _is_duplicate_mutation(current_strategy, mutated_content):
-                                        logging.info(
-                                            f"    [Dup] Strategy {current_strategy} produced identical mutant; skipping this variant."
-                                        )
-                                        mutated_content = None
-                                        inapplicable_retries += 1
-                                        if inapplicable_retries >= max_retries:
-                                            logging.warning(
-                                                f"[{variant_id}] Duplicate mutant hit max retries ({max_retries}); skipping this iteration."
+                                        if mutated_content is not None and _is_duplicate_mutation(current_strategy, mutated_content):
+                                            logging.info(
+                                                f"    [Dup] Strategy {current_strategy} produced identical mutant; skipping this variant."
                                             )
-                                            skip_iteration_due_to_inapplicable = True
-                                            break
+                                            mutated_content = None
+                                            inapplicable_retries += 1
+                                            if inapplicable_retries >= max_retries:
+                                                logging.warning(
+                                                    f"[{variant_id}] Duplicate mutant hit max retries ({max_retries}); skipping this iteration."
+                                                )
+                                                skip_iteration_due_to_inapplicable = True
+                                                break
+                                            continue
+                                        break  # Mutated successfully
+                                    else:
+                                        logging.error(f"[{variant_id}] Rust mutation tool produced no output")
                                         continue
-                                    break  # Mutated successfully
-                                else:
-                                    logging.error(f"[{variant_id}] Rust mutation tool produced no output")
-                                    continue
 
-                        # If we blacklisted the seed, stop trying more strategies for it.
-                        if seed_path in bad_seeds:
-                            break
+                            # If we blacklisted the seed, stop trying more strategies for it.
+                            if seed_path in bad_seeds:
+                                break
 
-                    except subprocess.CalledProcessError as e:
-                        logging.error(f"[{variant_id}] Mutation tool failed: {e.stderr}")
-                        continue # Retry
-                    except Exception as e:
-                        logging.error(f"[{variant_id}] Unexpected error during mutation: {e}")
+                        except subprocess.CalledProcessError as e:
+                            logging.error(f"[{variant_id}] Mutation tool failed: {e.stderr}")
+                            continue # Retry
+                        except Exception as e:
+                            logging.error(f"[{variant_id}] Unexpected error during mutation: {e}")
+                            continue
+
+                    if skip_iteration_due_to_inapplicable:
+                        if skip_inapplicable_reason != "exhausted":
+                            logging.info(
+                                "[%s] Strategy inapplicable; skipping this strategy and continuing",
+                                variant_id,
+                            )
                         continue
 
-                if skip_iteration_due_to_inapplicable:
-                    break
+                    # B. Compilation & Analysis (Outside Retry Loop)
+                    if mutated_content is None:
+                        logging.warning(f"[{variant_id}] Failed to produce mutation after {max_retries} attempts.")
+                        continue
 
-                # B. Compilation & Analysis (Outside Retry Loop)
-                if mutated_content is None:
-                    logging.warning(f"[{variant_id}] Failed to produce mutation after {max_retries} attempts.")
-                    continue
+                    kill_fate_now = False
+                    temp_src = None
+                    try:
+                        # 3. Save & Compile
+                        temp_src = Path(f"temp_{variant_id}.rs")
+                        with open(temp_src, 'w') as f:
+                            f.write(mutated_content)
 
-                try: 
-                    # 3. Save & Compile
-                    temp_src = Path(f"temp_{variant_id}.rs")
-                    with open(temp_src, 'w') as f:
-                        f.write(mutated_content)
-
-                    # 3. Compile (oracle): stable once, +nightly once, +nightly with -Z next-solver once.
-                    result_stable = compiler.compile(temp_src)
-
-                    result_nightly = None
-                    if enable_nightly_compile:
-                        compiler_nightly = RustCompiler(
-                            timeout=config["fuzzer"]["max_time_per_case_sec"],
-                            rustc_cmd=nightly_rustc_cmd,
-                        )
-                        result_nightly = compiler_nightly.compile(temp_src)
-
-                    result_next = None
-                    if enable_next_solver:
-                        compiler_next = RustCompiler(
-                            timeout=config["fuzzer"]["max_time_per_case_sec"],
-                            rustc_cmd=nightly_rustc_cmd,
-                        )
-                        result_next = compiler_next.compile(temp_src, extra_args=[next_solver_flag])
-
-                    def _rank(status: CompilationStatus) -> int:
-                        order = {
-                            CompilationStatus.CRASH: 4,
-                            CompilationStatus.HANG: 3,
-                            CompilationStatus.ERROR: 2,
-                            CompilationStatus.SUCCESS: 1,
-                            CompilationStatus.UNKNOWN: 0,
-                        }
-                        return order.get(status, 0)
-
-                    # Overall status: take the worst one (useful for triage/persistence).
-                    result = result_stable
-                    for r in (result_nightly, result_next):
-                        if r is not None and _rank(r.status) > _rank(result.status):
-                            result = r
-
-                    variant_by_mode = {"stable": result_stable}
-                    if result_nightly is not None:
-                        variant_by_mode["nightly"] = result_nightly
-                    if result_next is not None:
-                        variant_by_mode["next"] = result_next
-                    
-                    # 4. Categorize & persist
-                    # Always keep HANG/CRASH(ICE) and ERROR. SUCCESS is also kept (capped)
-                    # and additionally promoted into seeds/newN.
-                    status_name = result.status.value.lower()
-                    should_persist = True
-                    # Allow explicitly disabling SUCCESS persistence (still can be promoted).
-                    if result.status == CompilationStatus.SUCCESS and args.keep_success_cases == 0:
-                        should_persist = False
-
-                    # New policy: if the baseline seed already CRASH/HANGs, classify CRASH/HANG variants as "fate"
-                    # to avoid extra (and often noisy) dedup logic.
-                    if should_persist and result.status in (CompilationStatus.CRASH, CompilationStatus.HANG):
-                        if _is_seed_fate():
-                            status_name = "fate"
-                            logging.info(
-                                "[%s] Baseline already %s; classifying as fate",
-                                variant_id,
-                                result.status.value,
+                        # 3. Compile (oracle): stable once, +nightly once, +nightly with -Z next-solver once.
+                        def _compile_with(rustc_cmd, extra_args=None):
+                            comp = RustCompiler(
+                                timeout=config["fuzzer"]["max_time_per_case_sec"],
+                                rustc_cmd=rustc_cmd,
                             )
+                            return comp.compile(temp_src, extra_args=extra_args)
 
-                    dest_case = None
-                    if should_persist:
-                        # Per-case safety check: prune prunable categories before we write more.
-                        if not enforce_results_limits(
-                            results_dir,
-                            max_cases=args.max_cases,
-                            max_results_gb=args.max_results_gb,
-                            min_free_gb=args.min_free_gb,
-                            keep_success_cases=args.keep_success_cases,
-                            keep_error_cases=args.keep_error_cases,
-                        ):
-                            return
+                        result_stable = None
+                        result_nightly = None
+                        result_next = None
 
-                        dest_dir = results_dir / status_name
-                        dest_case = dest_dir / f"case_{variant_id}"
-                        dest_case.mkdir(parents=True, exist_ok=True)
-                        shutil.copy(seed_path, dest_case / "before.rs")
-                        shutil.copy(temp_src, dest_case / "after.rs")
+                        should_run_extras = (enable_nightly_compile or enable_next_solver)
 
-                    # 5. TTDN & Complexity (unified model)
-                    complexity = ttdn_model.calculate_complexity_for_file(temp_src)
-                    constraint_sites = int(complexity.extra.get("constraint_sites", 0))
-                    constraint_choice_sum = int(complexity.extra.get("constraint_choice_sum", 0))
-
-                    if temp_src.exists():
-                        temp_src.unlink()
-                    
-                    if constraint_choice_sum > max_choice["constraint_choice_sum"]:
-                        logging.info(
-                            "New constraint-choice record! choice_sum=%d sites=%d",
-                            constraint_choice_sum,
-                            constraint_sites,
-                        )
-                        max_choice["constraint_choice_sum"] = max(
-                            max_choice["constraint_choice_sum"],
-                            constraint_choice_sum,
-                        )
-                        stall_counter = 0 
-                    else:
-                        stall_counter += 1
-                    
-                    if dest_case is not None:
-                        with open(dest_case / "detail.log", 'w') as f:
-                            f.write(f"Seed: {seed_path.name}\n")
-                            f.write(f"Strategy: {current_strategy}\n")
-                            f.write(f"Status: {result.status.value}\n")
-                            f.write(f"Constraint Sites: {constraint_sites}\n")
-                            f.write(f"Constraint Choice Sum: {constraint_choice_sum}\n")
-                            f.write("\n=== rustc (stable) ===\n")
-                            f.write(f"Command: {' '.join(map(str, compiler.rustc_cmd))}\n")
-                            f.write(f"Status: {result_stable.status.value}\n")
-                            f.write(f"Duration: {result_stable.duration:.4f}s\n")
-                            f.write(f"Return code: {result_stable.return_code}\n")
-                            f.write(f"Stdout:\n{result_stable.stdout}\n")
-                            f.write(f"Stderr:\n{result_stable.stderr}\n")
-
-                            if result_nightly is not None:
-                                f.write("\n=== rustc (+nightly) ===\n")
-                                f.write(f"Command: {' '.join(map(str, nightly_rustc_cmd))}\n")
-                                f.write(f"Status: {result_nightly.status.value}\n")
-                                f.write(f"Duration: {result_nightly.duration:.4f}s\n")
-                                f.write(f"Return code: {result_nightly.return_code}\n")
-                                f.write(f"Stdout:\n{result_nightly.stdout}\n")
-                                f.write(f"Stderr:\n{result_nightly.stderr}\n")
-
-                            if result_next is not None:
-                                f.write("\n=== rustc (-Z next trait-solver) ===\n")
-                                f.write(f"Command: {' '.join(map(str, nightly_rustc_cmd + [next_solver_flag]))}\n")
-                                f.write(f"Status: {result_next.status.value}\n")
-                                f.write(f"Duration: {result_next.duration:.4f}s\n")
-                                f.write(f"Return code: {result_next.return_code}\n")
-                                f.write(f"Stdout:\n{result_next.stdout}\n")
-                                f.write(f"Stderr:\n{result_next.stderr}\n")
-
-                    logging.info(
-                        "[%s] Result: %s | choice_sum=%d sites=%d",
-                        variant_id,
-                        result.status.value,
-                        constraint_choice_sum,
-                        constraint_sites,
-                    )
-
-                    # Promote SUCCESS mutants into seeds/newN (rolling cap)
-                    if promoted_dir is not None and result.status == CompilationStatus.SUCCESS:
-                        try:
-                            if max_promotions_per_seed <= 0:
-                                raise RuntimeError("SUCCESS promotion disabled by max_promotions_per_seed <= 0")
-
-                            promoted_so_far = int(promotions_by_seed.get(parent_key, 0))
-                            if promoted_so_far >= max_promotions_per_seed:
-                                logging.info(
-                                    "[%s] Skip promote (seed cap reached: %d/%d): %s",
-                                    variant_id,
-                                    promoted_so_far,
-                                    max_promotions_per_seed,
-                                    seed_path.name,
+                        if parallel_compile and should_run_extras:
+                            with ThreadPoolExecutor(max_workers=parallel_workers) as ex:
+                                futures = {}
+                                futures["stable"] = ex.submit(
+                                    _compile_with,
+                                    compiler_cfg.get("rustc_cmd"),
+                                    None,
                                 )
-                                raise RuntimeError("SUCCESS promotion seed cap reached")
+                                if enable_nightly_compile:
+                                    futures["nightly"] = ex.submit(
+                                        _compile_with,
+                                        nightly_rustc_cmd,
+                                        None,
+                                    )
+                                if enable_next_solver:
+                                    futures["next"] = ex.submit(
+                                        _compile_with,
+                                        nightly_rustc_cmd,
+                                        [next_solver_flag],
+                                    )
 
-                            # Roll to the next newN directory when the current one is full.
-                            promoted_dir = maybe_roll_promoted_dir(
-                                promoted_dir,
-                                seeds_dir,
-                                args.new_seeds_prefix,
-                                args.new_seeds_max,
+                                result_stable = futures["stable"].result()
+                                if "nightly" in futures:
+                                    result_nightly = futures["nightly"].result()
+                                if "next" in futures:
+                                    result_next = futures["next"].result()
+                        else:
+                            result_stable = compiler.compile(temp_src)
+
+                            if enable_nightly_compile:
+                                compiler_nightly = RustCompiler(
+                                    timeout=config["fuzzer"]["max_time_per_case_sec"],
+                                    rustc_cmd=nightly_rustc_cmd,
+                                )
+                                result_nightly = compiler_nightly.compile(temp_src)
+
+                            if enable_next_solver:
+                                compiler_next = RustCompiler(
+                                    timeout=config["fuzzer"]["max_time_per_case_sec"],
+                                    rustc_cmd=nightly_rustc_cmd,
+                                )
+                                result_next = compiler_next.compile(temp_src, extra_args=[next_solver_flag])
+
+                        def _rank(status: CompilationStatus) -> int:
+                            order = {
+                                CompilationStatus.CRASH: 4,
+                                CompilationStatus.HANG: 3,
+                                CompilationStatus.ERROR: 2,
+                                CompilationStatus.SUCCESS: 1,
+                                CompilationStatus.UNKNOWN: 0,
+                            }
+                            return order.get(status, 0)
+
+                        # Overall status: take the worst one (useful for triage/persistence).
+                        result = result_stable
+                        for r in (result_nightly, result_next):
+                            if r is not None and _rank(r.status) > _rank(result.status):
+                                result = r
+
+                        variant_by_mode = {"stable": result_stable}
+                        if result_nightly is not None:
+                            variant_by_mode["nightly"] = result_nightly
+                        if result_next is not None:
+                            variant_by_mode["next"] = result_next
+
+                        # 4. Categorize & persist
+                        # Always keep HANG/CRASH(ICE) and ERROR. SUCCESS is also kept (capped)
+                        # and additionally promoted into seeds/newN.
+                        status_name = result.status.value.lower()
+                        should_persist = True
+                        # Allow explicitly disabling SUCCESS persistence (still can be promoted).
+                        if result.status == CompilationStatus.SUCCESS and args.keep_success_cases == 0:
+                            should_persist = False
+
+                        # Miscompilation: nightly default vs -Znext-solver disagree (SUCCESS vs ERROR).
+                        miscompilation = False
+                        if args.detect_miscompilation and enable_nightly_compile and enable_next_solver:
+                            if result_nightly is not None and result_next is not None:
+                                nst = result_nightly.status
+                                xst = result_next.status
+                                if (
+                                    nst in (CompilationStatus.SUCCESS, CompilationStatus.ERROR)
+                                    and xst in (CompilationStatus.SUCCESS, CompilationStatus.ERROR)
+                                    and nst != xst
+                                ):
+                                    miscompilation = True
+
+                        # If baseline already miscompiles, classify as fate (do not place into mis/other).
+                        if miscompilation and _is_seed_miscompilation():
+                            status_name = "fate"
+                            should_persist = True
+                            miscompilation = False
+
+                        # New policy: if the baseline seed already CRASH/HANGs, classify CRASH/HANG variants as "fate"
+                        # to avoid extra (and often noisy) dedup logic.
+                        if should_persist and result.status in (CompilationStatus.CRASH, CompilationStatus.HANG):
+                            selector.ban_family(ancestor_family)
+                            if _is_seed_fate():
+                                status_name = "fate"
+                                logging.info(
+                                    "[%s] Baseline already %s; classifying as fate",
+                                    variant_id,
+                                    result.status.value,
+                                )
+                                # Kill fate: skip remaining attempts for this seed.
+                                skip_remaining_rounds = True
+                                kill_fate_now = True
+                            else:
+                                # Prominent alert for real HANG/ICE (non-fate)
+                                alert_color = "\033[1;31m"  # bright red
+                                alert_reset = "\033[0m"
+                                alert_label = "ICE" if result.status == CompilationStatus.CRASH else "HANG"
+                                logging.error(
+                                    f"{alert_color}!!! {alert_label} DETECTED !!!{alert_reset}"
+                                )
+
+                        # Decide target categories (allow multiple when necessary).
+                        dest_statuses: List[str] = []
+                        if should_persist:
+                            dest_statuses.append(status_name)
+                        if miscompilation:
+                            dest_statuses.append("miscompilation")
+
+                        dest_case = None
+                        if dest_statuses:
+                            # Per-case safety check: prune prunable categories before we write more.
+                            if not enforce_results_limits(
+                                results_dir,
+                                max_cases=args.max_cases,
+                                max_results_gb=args.max_results_gb,
+                                min_free_gb=args.min_free_gb,
+                                keep_success_cases=args.keep_success_cases,
+                                keep_error_cases=args.keep_error_cases,
+                                keep_fate_cases=args.keep_fate_cases,
+                            ):
+                                return
+
+                            for ds in dict.fromkeys(dest_statuses):
+                                dest_dir = results_dir / ds
+                                dest_case = dest_dir / f"case_{variant_id}"
+                                dest_case.mkdir(parents=True, exist_ok=True)
+                                shutil.copy(round_seed_path, dest_case / "before.rs")
+                                shutil.copy(temp_src, dest_case / "after.rs")
+
+                        # 5. TTDN & Complexity (unified model)
+                        complexity = ttdn_model.calculate_complexity_for_file(temp_src)
+                        constraint_sites = int(complexity.extra.get("constraint_sites", 0))
+                        constraint_choice_sum = int(complexity.extra.get("constraint_choice_sum", 0))
+
+                        if temp_src is not None and temp_src.exists():
+                            temp_src.unlink()
+
+                        if constraint_choice_sum > max_choice["constraint_choice_sum"]:
+                            max_choice["constraint_choice_sum"] = max(
+                                max_choice["constraint_choice_sum"],
+                                constraint_choice_sum,
                             )
 
-                            out_path = promoted_dir / f"seed_{variant_id}.rs"
-                            if out_path.exists():
-                                out_path = promoted_dir / f"seed_{variant_id}_{int(time.time())}.rs"
-                            out_path.write_text(mutated_content, encoding='utf-8', errors='ignore')
-                            # Make the newly promoted seed immediately eligible for selection.
+                        if dest_case is not None:
+                            with open(dest_case / "detail.log", 'w') as f:
+                                f.write(f"Seed: {round_seed_path.name}\n")
+                                f.write(f"Strategy: {current_strategy}\n")
+                                f.write(f"Status: {result.status.value}\n")
+                                if miscompilation and result_nightly is not None and result_next is not None:
+                                    f.write("Miscompilation: nightly vs next-solver mismatch\n")
+                                    f.write(f"Nightly: {result_nightly.status.value}\n")
+                                    f.write(f"Next: {result_next.status.value}\n")
+                                f.write(f"Constraint Sites: {constraint_sites}\n")
+                                f.write(f"Constraint Choice Sum: {constraint_choice_sum}\n")
+                                f.write("\n=== rustc (stable) ===\n")
+                                f.write(f"Command: {' '.join(map(str, compiler.rustc_cmd))}\n")
+                                f.write(f"Status: {result_stable.status.value}\n")
+                                f.write(f"Duration: {result_stable.duration:.4f}s\n")
+                                f.write(f"Return code: {result_stable.return_code}\n")
+                                f.write(f"Stdout:\n{result_stable.stdout}\n")
+                                f.write(f"Stderr:\n{result_stable.stderr}\n")
+
+                                if result_nightly is not None:
+                                    f.write("\n=== rustc (+nightly) ===\n")
+                                    f.write(f"Command: {' '.join(map(str, nightly_rustc_cmd))}\n")
+                                    f.write(f"Status: {result_nightly.status.value}\n")
+                                    f.write(f"Duration: {result_nightly.duration:.4f}s\n")
+                                    f.write(f"Return code: {result_nightly.return_code}\n")
+                                    f.write(f"Stdout:\n{result_nightly.stdout}\n")
+                                    f.write(f"Stderr:\n{result_nightly.stderr}\n")
+
+                                if result_next is not None:
+                                    f.write("\n=== rustc (-Z next trait-solver) ===\n")
+                                    f.write(f"Command: {' '.join(map(str, nightly_rustc_cmd + [next_solver_flag]))}\n")
+                                    f.write(f"Status: {result_next.status.value}\n")
+                                    f.write(f"Duration: {result_next.duration:.4f}s\n")
+                                    f.write(f"Return code: {result_next.return_code}\n")
+                                    f.write(f"Stdout:\n{result_next.stdout}\n")
+                                    f.write(f"Stderr:\n{result_next.stderr}\n")
+
+                        logging.info(
+                            "[%s] Result: %s",
+                            variant_id,
+                            result.status.value,
+                        )
+
+                        if skip_remaining_rounds:
+                            logging.info("[%s] Kill fate: skipping remaining rounds for this seed", variant_id)
+
+                        # Chain evolution: use MutationⅠ output as next round seed
+                        if current_strategy in getattr(mutator_pool, "structural_ops", []):
+                            current_seed_content = mutated_content
+                            # New structure: reset mutation-point tracking for the next round
+                            used_indices_by_strategy = {}
+                            known_candidate_counts = {}
+                            exhausted_strategies = set()
+                            seen_mutations_by_strategy = {}
+
+                        # Promote SUCCESS mutants into seeds/newN (rolling cap)
+                        # Only MutationⅡ (constraint_injection) is eligible when promotion is enabled.
+                        promote_eligible = (
+                            promoted_dir is not None
+                            and args.promote_success
+                            and current_strategy == "constraint_injection"
+                        )
+                        if promote_eligible and result.status == CompilationStatus.SUCCESS:
                             try:
-                                selector.add_seed(out_path)
-                            except Exception:
-                                pass
+                                if max_promotions_per_seed <= 0:
+                                    raise RuntimeError("SUCCESS promotion disabled by max_promotions_per_seed <= 0")
 
-                            promotions_by_seed[parent_key] = promoted_so_far + 1
-                        except Exception as e:
-                            logging.warning("Failed to promote seed %s: %s", variant_id, e)
+                                promoted_so_far = int(promotions_by_seed.get(parent_key, 0))
+                                if promoted_so_far >= max_promotions_per_seed:
+                                    if parent_key not in logged_promotion_cap:
+                                        logging.info(
+                                            "[%s] Skip promote (seed cap reached: %d/%d): %s",
+                                            variant_id,
+                                            promoted_so_far,
+                                            max_promotions_per_seed,
+                                            seed_path.name,
+                                        )
+                                        logged_promotion_cap.add(parent_key)
+                                    continue
 
-                except Exception as e:
-                    logging.error(f"[{variant_id}] Variant compilation/analysis failed: {e}")
+                                # Roll to the next newN directory when the current one is full.
+                                promoted_dir = maybe_roll_promoted_dir(
+                                    promoted_dir,
+                                    seeds_dir,
+                                    args.new_seeds_prefix,
+                                    args.new_seeds_max,
+                                )
+
+                                out_path = promoted_dir / f"seed_{variant_id}.rs"
+                                if out_path.exists():
+                                    out_path = promoted_dir / f"seed_{variant_id}_{int(time.time())}.rs"
+                                out_path.write_text(mutated_content, encoding='utf-8', errors='ignore')
+                                # Make the newly promoted seed immediately eligible for selection.
+                                try:
+                                    selector.add_seed(out_path, family_id=ancestor_family)
+                                except Exception:
+                                    pass
+
+                                promotions_by_seed[parent_key] = promoted_so_far + 1
+                            except Exception as e:
+                                logging.warning("Failed to promote seed %s: %s", variant_id, e)
+
+                    except Exception as e:
+                        logging.error(f"[{variant_id}] Variant compilation/analysis failed: {e}")
+                    finally:
+                        try:
+                            if temp_src is not None and temp_src.exists():
+                                temp_src.unlink()
+                        except Exception:
+                            pass
+
+                    if kill_fate_now:
+                        break
+
+                if round_seed_temp is not None:
+                    try:
+                        if round_seed_temp.exists():
+                            round_seed_temp.unlink()
+                    except Exception:
+                        pass
 
             # End of one outer iteration (one selected seed): prune prunable categories.
             if not enforce_results_limits(
@@ -1293,6 +1755,7 @@ def main():
                 min_free_gb=args.min_free_gb,
                 keep_success_cases=args.keep_success_cases,
                 keep_error_cases=args.keep_error_cases,
+                keep_fate_cases=args.keep_fate_cases,
             ):
                 return
 
@@ -1302,5 +1765,45 @@ def main():
         print(f"Error: {e}")
         sys.exit(1)
 
+def main():
+    # Parse config to find out how many workers we need
+    args, config = parse_args_and_config()
+    num_workers = int(config.get("fuzzer", {}).get("workers", 1))
+
+    # Pre-build the mutation tool ONCE in the main process
+    try:
+        mutation_bin_path = ensure_mutation_tool_built()
+    except Exception as e:
+        print(f"Critical error building mutation tool: {e}")
+        sys.exit(1)
+
+    if num_workers <= 1:
+        worker_main(0, 1, mutation_bin_path)
+    else:
+        print(f"Spawning {num_workers} parallel workers...")
+        processes = []
+        for i in range(num_workers):
+            p = multiprocessing.Process(target=worker_main, args=(i, num_workers, mutation_bin_path))
+            p.start()
+            processes.append(p)
+        
+        def signal_handler(sig, frame):
+            print("\nShutting down workers...")
+            for p in processes:
+                if p.is_alive():
+                    p.terminate()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        try:
+            for p in processes:
+                p.join()
+        except KeyboardInterrupt:
+            signal_handler(None, None)
+
 if __name__ == "__main__":
+    # Windows support for multiprocessing
+    multiprocessing.freeze_support()
     main()
