@@ -77,7 +77,7 @@ class RustCompiler:
             status = CompilationStatus.SUCCESS if process.returncode == 0 else CompilationStatus.ERROR
             
             # Check for Internal Compiler Error (ICE)
-            if "internal compiler error" in process.stderr.lower() or "thread 'rustc' panicked" in process.stderr.lower():
+            if "internal compiler error" in process.stderr.lower() or "thread 'rustc' panicked" in process.stderr.lower() or "panicked" in process.stderr.lower():
                 status = CompilationStatus.CRASH
 
             # Best-effort cleanup for the explicit output_path.

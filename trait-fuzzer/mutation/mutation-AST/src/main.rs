@@ -9,6 +9,8 @@ mod ttdn;
 use mutators::Mutation_1::*;
 use mutators::Mutation_2::*;
 use mutators::Mutation_3::*;
+use mutators::Mutation_4::*;
+use mutators::Mutation_5::*;
 use mutators::framework::Mutator;
 
 #[derive(Parser, Debug)]
@@ -40,6 +42,10 @@ struct Args {
     /// Force a particular replacement-candidate index (0-based) within projection_rewrite.
     #[arg(long)]
     choice_index: Option<usize>,
+
+    /// Force a particular trait pattern (0=Basic, 1=Assoc, 2=GAT, 3=AssocConst).
+    #[arg(long)]
+    pattern_index: Option<usize>,
 }
 
 fn main() {
@@ -67,6 +73,7 @@ fn main() {
         let payload = serde_json::json!({
             "constraint_sites": c.constraint_sites,
             "constraint_choice_sum": c.constraint_choice_sum,
+            "lifetime_sites": c.lifetime_sites,
             "rewrite_sites": p.rewrite_sites,
             "rewrite_choice_sum": p.rewrite_choice_sum,
             "traits": info.traits.len(),
@@ -119,7 +126,8 @@ fn main() {
     let (mutated, chosen_index, candidate_count, constraint_count, chosen_constraint_index) = match args.mode.as_str() {
         // Structural
         "add_trait" => {
-            let (m, i, c) = AddTraitMutator.run_with_meta(&mut syntax_tree, args.index);
+            let mut mutator = AddTraitMutator { force_pattern: args.pattern_index };
+            let (m, i, c) = mutator.run_with_meta(&mut syntax_tree, args.index);
             (m, i, c, 0, 0)
         }
         "add_impl" => {
@@ -138,6 +146,16 @@ fn main() {
             args.index,
             args.choice_index,
         ),
+        
+        // Lifetime
+        "lifetime_obfuscation" => {
+            let (m, i, c) = LifetimeMutator.run_with_meta(&mut syntax_tree, args.index);
+            (m, i, c, 0, 0)
+        }
+        "lifetime_outlive" => {
+            let (m, i, c) = OutliveMutator.run_with_meta(&mut syntax_tree, args.index);
+            (m, i, c, 0, 0)
+        }
         
         _ => {
             eprintln!("Unknown mode: {}", args.mode);

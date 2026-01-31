@@ -24,10 +24,15 @@ def clean_directory(path):
     path = Path(path)
     if path.exists():
         for item in path.iterdir():
-            if item.is_dir():
-                shutil.rmtree(item)
-            else:
-                item.unlink()
+            try:
+                if item.is_dir():
+                    shutil.rmtree(item)
+                    print(f"Removed directory {item}")
+                else:
+                    item.unlink()
+                    print(f"Removed file {item}")
+            except Exception as e:
+                print(f"Failed to remove {item}: {e}")
         print(f"Cleaned {path}")
     else:
         print(f"Directory {path} does not exist")
@@ -97,6 +102,7 @@ def clean_promoted_seeds(base_dir: Path, config: dict):
 def main():
     parser = argparse.ArgumentParser(description="Clean Trait-Fuzzer results")
     parser.add_argument("--all", action="store_true", help="Clean all results and logs")
+    parser.add_argument("--logs", action="store_true", help="Also clean log files")
     parser.add_argument("--config", default="config.json", help="Path to configuration file")
     args = parser.parse_args()
 
@@ -108,8 +114,10 @@ def main():
     clean_directory(base_dir / "results_night" / "success")
     clean_directory(base_dir / "results_night" / "error")
     
-    if args.all:
+    if args.all or args.logs:
         clean_directory(base_dir / "logs")
+    else:
+        print("Logs skipped (use --logs or --all to clean them)")
 
     # Clean promoted seeds under seeds/<prefix><digits>/ based on config
     clean_promoted_seeds(base_dir, config)
@@ -145,6 +153,12 @@ def main():
     # Keep it conservative to avoid deleting unrelated build outputs.
     project_root = base_dir.parent
     remove_files_by_patterns(project_root, patterns=["temp_*.rs", "libtemp*.rlib"])
+
+    # Clean ICE files in the test directory
+    remove_files_by_patterns(
+        base_dir / "test",
+        patterns=["rustc-ice-*.txt"]
+    )
 
 if __name__ == "__main__":
     main()

@@ -11,7 +11,10 @@ use super::trait_pattern;
 // =========================================================================
 // 1. Add Trait
 // =========================================================================
-pub struct AddTraitMutator;
+pub struct AddTraitMutator {
+    pub force_pattern: Option<usize>,
+}
+
 // For AddTrait, collection is simple: we always have 1 valid mutation point (the file root)
 impl Mutator for AddTraitMutator {
     fn collect(&mut self, _ast: &syn::File) -> usize {
@@ -46,7 +49,14 @@ impl Mutator for AddTraitMutator {
         };
 
         // Use built-in trait patterns (basic / assoc type / GAT)
-        let pattern = trait_pattern::choose_pattern();
+        let pattern = match self.force_pattern {
+            Some(0) => trait_pattern::TraitPattern::Basic,
+            Some(1) => trait_pattern::TraitPattern::AssocType,
+            Some(2) => trait_pattern::TraitPattern::Gat,
+            Some(3) => trait_pattern::TraitPattern::AssocTypeAndConst,
+            _ => trait_pattern::choose_pattern(),
+        };
+
         let new_trait: ItemTrait = trait_pattern::build_trait(&trait_ident, pattern);
         ast.items.push(syn::Item::Trait(new_trait));
         true
@@ -63,12 +73,14 @@ impl Mutator for AddTraitMutator {
 pub struct AddImplMutator;
 
 impl AddImplMutator {
-    fn only_type_params(generics: &syn::Generics) -> Option<Vec<Ident>> {
+    // Extract generic params (Type and Const) that need to be supplied by the impl.
+    // Returns a list of params. We filter out lifetimes as we don't handle them for now.
+    fn extract_generic_params(generics: &syn::Generics) -> Option<Vec<GenericParam>> {
         let mut out = Vec::new();
         for p in &generics.params {
             match p {
-                GenericParam::Type(tp) => out.push(tp.ident.clone()),
-                _ => return None,
+                GenericParam::Type(_) | GenericParam::Const(_) => out.push(p.clone()),
+                _ => return None, // Lifetimes are skipped
             }
         }
         Some(out)
@@ -87,7 +99,6 @@ impl AddImplMutator {
             }
         }
 
-        // Extremely unlikely fallback.
         syn::Ident::new("G", proc_macro2::Span::call_site())
     }
 
@@ -148,7 +159,6 @@ impl Mutator for AddImplMutator {
                 _ => None,
             });
 
-            // If we can't find the actual definition, keep it simple and try another.
             let Some(tr_def) = trait_item else {
                 continue;
             };
@@ -156,62 +166,87 @@ impl Mutator for AddImplMutator {
                 continue;
             };
 
-            // More aggressive support: allow type generics, but only type params (skip lifetime/const).
-            let Some(trait_param_idents) = Self::only_type_params(&tr_def.generics) else {
+            // Support type and const generics
+            let Some(trait_params) = Self::extract_generic_params(&tr_def.generics) else {
                 continue;
             };
-            let Some(type_param_idents) = Self::only_type_params(&ty_def_generics) else {
+            let Some(type_params) = Self::extract_generic_params(&ty_def_generics) else {
                 continue;
             };
 
             // Build a single impl generics list and instantiate both sides.
-            // More aggressive: sometimes instantiate type args with existing concrete types.
             let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
-            let mut impl_params: Vec<Ident> = Vec::new();
-            let mut trait_arg_tys: Vec<Type> = Vec::new();
-            let mut type_arg_tys: Vec<Type> = Vec::new();
+            let mut impl_params: Vec<GenericParam> = Vec::new(); // Changed to GenericParam
+            let mut trait_args: Vec<syn::GenericArgument> = Vec::new(); // Changed to GenericArgument
+            let mut type_args: Vec<syn::GenericArgument> = Vec::new();
 
-            for p in trait_param_idents {
-                if rng.gen_bool(INSTANTIATE_ARG_PROB) {
-                    if let Some(concrete) = ttdn.types.choose(&mut rng) {
-                        let concrete_ident = concrete.clone();
-                        let ty: Type = parse_quote!(#concrete_ident);
-                        trait_arg_tys.push(ty);
-                        continue;
-                    }
+            // Handle Trait Generics (e.g. Trait<T, const N: usize>)
+            for p in trait_params {
+                match p {
+                    GenericParam::Type(tp) => {
+                        let p_name = &tp.ident;
+                        if rng.gen_bool(INSTANTIATE_ARG_PROB) {
+                            if let Some(concrete) = ttdn.types.choose(&mut rng) {
+                                let concrete_ident = concrete.clone();
+                                let ty: Type = parse_quote!(#concrete_ident);
+                                trait_args.push(syn::GenericArgument::Type(ty));
+                                continue;
+                            }
+                        }
+                        let id = Self::uniquify_ident(p_name, &mut used);
+                        impl_params.push(parse_quote!(#id));
+                        let ty: Type = parse_quote!(#id);
+                        trait_args.push(syn::GenericArgument::Type(ty));
+                    },
+                    GenericParam::Const(cp) => {
+                        // For const generics, we almost always want to instantiate with a concrete value
+                        // because lifting it to the impl header `impl<const N: usize>` is fine,
+                        // but generating a random value is easier and more interesting for fuzzing values.
+                         let val: usize = rng.gen_range(1..1024);
+                         let lit = syn::LitInt::new(&val.to_string(), proc_macro2::Span::call_site());
+                         trait_args.push(syn::GenericArgument::Const(parse_quote!(#lit)));
+                    },
+                    _ => {}
                 }
-
-                let id = Self::uniquify_ident(&p, &mut used);
-                impl_params.push(id.clone());
-                let ty: Type = parse_quote!(#id);
-                trait_arg_tys.push(ty);
             }
-            for p in type_param_idents {
-                if rng.gen_bool(INSTANTIATE_ARG_PROB) {
-                    if let Some(concrete) = ttdn.types.choose(&mut rng) {
-                        let concrete_ident = concrete.clone();
-                        let ty: Type = parse_quote!(#concrete_ident);
-                        type_arg_tys.push(ty);
-                        continue;
-                    }
+
+            // Handle Type Generics (e.g. Struct<T>)
+            for p in type_params {
+                 match p {
+                    GenericParam::Type(tp) => {
+                        let p_name = &tp.ident;
+                        if rng.gen_bool(INSTANTIATE_ARG_PROB) {
+                            if let Some(concrete) = ttdn.types.choose(&mut rng) {
+                                let concrete_ident = concrete.clone();
+                                let ty: Type = parse_quote!(#concrete_ident);
+                                type_args.push(syn::GenericArgument::Type(ty));
+                                continue;
+                            }
+                        }
+                        let id = Self::uniquify_ident(p_name, &mut used);
+                        impl_params.push(parse_quote!(#id));
+                        let ty: Type = parse_quote!(#id);
+                        type_args.push(syn::GenericArgument::Type(ty));
+                    },
+                    GenericParam::Const(cp) => {
+                         let val: usize = rng.gen_range(1..1024);
+                         let lit = syn::LitInt::new(&val.to_string(), proc_macro2::Span::call_site());
+                         type_args.push(syn::GenericArgument::Const(parse_quote!(#lit)));
+                    },
+                    _ => {}
                 }
-
-                let id = Self::uniquify_ident(&p, &mut used);
-                impl_params.push(id.clone());
-                let ty: Type = parse_quote!(#id);
-                type_arg_tys.push(ty);
             }
 
-            let trait_path: syn::Path = if trait_arg_tys.is_empty() {
+            let trait_path: syn::Path = if trait_args.is_empty() {
                 parse_quote!(#trait_ident)
             } else {
-                parse_quote!(#trait_ident < #(#trait_arg_tys),* >)
+                parse_quote!(#trait_ident < #(#trait_args),* >)
             };
 
-            let self_ty: Type = if type_arg_tys.is_empty() {
+            let self_ty: Type = if type_args.is_empty() {
                 parse_quote!(#type_ident)
             } else {
-                parse_quote!(#type_ident < #(#type_arg_tys),* >)
+                parse_quote!(#type_ident < #(#type_args),* >)
             };
 
             let mut new_impl: ItemImpl = parse_quote!(impl #trait_path for #self_ty {});

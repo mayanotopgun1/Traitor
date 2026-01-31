@@ -1,28 +1,38 @@
 #!/usr/bin/env bash
-set -euo pipefail
+# 注意：treereduce 会把待测文件名作为第一个参数传进来 ($1)
+INPUT_FILE="${1:-bug.rs}"
+MODE="${FUZZ_MODE:-0}"
 
-input_file="${1:-bug.rs}"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
-cp "$input_file" "$work_dir/bug.rs"
+cp "$INPUT_FILE" "$work_dir/bug.rs"
 
-# 先做快速语法检查，避免接受语法错误的候选
-set +e
-timeout --preserve-status -k 1s 2s rustc +nightly -Z unpretty=ast-tree "$work_dir/bug.rs" >/dev/null 2>&1
-parse_status=$?
-if [ $parse_status -ne 0 ]; then
-  exit 1
-fi
-
-# 限制编译时间，确保 reduce 不会卡住
-timeout --preserve-status -k 1s 5s rustc +nightly -Z next-solver=globally "$work_dir/bug.rs" >/dev/null 2>&1
-# timeout --preserve-status -k 1s 5s rustc +nightly  "$work_dir/bug.rs" >/dev/null 2>&1
-status=$?
-set -e
-
-# 如果 rustc 卡住（timeout），exit 0；否则 exit 1
-if [ $status -eq 124 ] || [ $status -eq 137 ] || [ $status -eq 143 ]; then
-  exit 0
-else
-  exit 1
-fi
+case $MODE in
+  0) # Hang check
+    set +e
+    timeout --preserve-status 2s rustc +nightly -Z unpretty=ast-tree "$work_dir/bug.rs" >/dev/null 2>&1
+    [ $? -ne 0 ] && exit 1
+    timeout --preserve-status 5s rustc +nightly -Z next-solver=globally "$work_dir/bug.rs" >/dev/null 2>&1
+    status=$?
+    # 124, 137, 143 是 timeout 杀掉进程的状态码
+    [[ $status -eq 124 || $status -eq 137 || $status -eq 143 ]] && exit 0 || exit 1
+    ;;
+  1) # ICE check
+    set +e
+    timeout --preserve-status 5s rustc +nightly -Z unpretty=ast-tree "$work_dir/bug.rs" >/dev/null 2>&1
+    [ $? -ne 0 ] && exit 1
+    output_log="$work_dir/output.log"
+    rustc +nightly -Z next-solver=globally "$work_dir/bug.rs" >"$output_log" 2>&1
+    grep -Fq "panicked" "$output_log" && exit 0 || exit 1
+    ;;
+  2) # Standard success, new fail
+    rustc +nightly --crate-type lib "$work_dir/bug.rs" >/dev/null 2>&1 || exit 1
+    rustc +nightly -Z next-solver=globally --crate-type lib "$work_dir/bug.rs" >/dev/null 2>&1
+    [ $? -ne 0 ] && exit 0 || exit 1
+    ;;
+  3) # Standard fail, new success
+    rustc +nightly --crate-type lib "$work_dir/bug.rs" >/dev/null 2>&1 && exit 1
+    rustc +nightly -Z next-solver=globally --crate-type lib "$work_dir/bug.rs" >/dev/null 2>&1
+    [ $? -eq 0 ] && exit 0 || exit 1
+    ;;
+esac

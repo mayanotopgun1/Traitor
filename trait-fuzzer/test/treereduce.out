@@ -1,20 +1,16 @@
-trait Trait {}
+#![feature(const_trait_impl)]
+use std::marker::Destruct;
+mod foo {
+    trait T {}
+    pub type Alias<'a> =  T<>;
+}
+use foo::*;
+const fn with_positive<F: for<'a> [const] Fn(&'a Alias<'a>) + [const] Destruct>((): F) {;}
 
-trait Noop {
-    type Assoc: ?Sized + ;
-}
-impl<T: ?Sized> Noop for T
-where
-    <NoopNewtype<T> as Noop>::Assoc: Noop,
-{
-    type Assoc = T;
-}
-struct NoopNewtype<T: ?Sized + Noop>(T::Assoc);
-fn coerce_newtype<>() -> &NoopNewtype< Trait + '_> {
-    x
-}
+ fn foo() {}
 
+const BAR: () = {
+    with_positive(());
+};
 
-impl<T> Noop for NoopNewtype<T> {
-    
-}
+fn main() {}

@@ -3,9 +3,11 @@
         "iterations": 50000,
         "workers": 4,
         "worker_console_logging": false,
-        "mutations_per_seed": 5,
-        "injection_mutations_per_round": 20,
-        "projection_mutations_per_round": 20,
+        "mutations_per_seed": 8,
+        "injection_mutations_per_round": 30,
+        "projection_mutations_per_round": 30,
+        "lifetime_mutations_per_round": 20,
+        "outlive_mutations_per_round": 20,
         "structural_mutations_per_round": 1,
         "seed_selection_strategy": "ttdn_metric",
         "max_time_per_case_sec": 10,
@@ -13,7 +15,7 @@
             "add_impl": 0.50,
             "add_trait": 0.50
         },
-        "max_promotions_per_seed": 12
+        "max_promotions_per_seed": 6
     },
     "run": {
         "structural_only": false,

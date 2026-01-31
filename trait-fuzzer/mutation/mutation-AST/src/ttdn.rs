@@ -85,6 +85,10 @@ pub struct ConstraintChoiceMetrics {
     /// Sum of constraint-set sizes across all sites.
     /// This is the total number of (site × constraint) combinations, after scope filtering.
     pub constraint_choice_sum: u32,
+    /// Total number of function arguments available for lifetime mutation (Mutation IV).
+    pub lifetime_sites: u32,
+    /// Total number of functions available for outlive constraint mutation (Mutation V).
+    pub outlive_sites: u32,
 }
 
 impl ConstraintChoiceMetrics {
@@ -161,6 +165,7 @@ impl ConstraintChoiceMetrics {
             custom_traits: &'a HashSet<String>,
             impl_edge_traits_by_self: &'a HashMap<String, HashSet<String>>,
             out: ConstraintChoiceMetrics,
+            in_trait_impl: bool,
         }
 
         impl<'ast> Visit<'ast> for V<'_> {
@@ -176,6 +181,11 @@ impl ConstraintChoiceMetrics {
             }
 
             fn visit_item_impl(&mut self, i: &'ast ItemImpl) {
+                let old_in_trait = self.in_trait_impl;
+                if i.trait_.is_some() {
+                    self.in_trait_impl = true;
+                }
+
                 // Where-clause injection site: we approximate selectable constraints as the sum of
                 // available (TypeParam: Trait) choices over local type params (+ Self when identifiable).
                 self.out.constraint_sites += 1;
@@ -209,6 +219,7 @@ impl ConstraintChoiceMetrics {
                 self.out.constraint_choice_sum += total_choices;
 
                 visit::visit_item_impl(self, i);
+                self.in_trait_impl = old_in_trait;
             }
 
             fn visit_generic_param(&mut self, i: &'ast GenericParam) {
@@ -229,12 +240,32 @@ impl ConstraintChoiceMetrics {
                 let choices = ConstraintChoiceMetrics::count_trait_choices(self.custom_traits, &already);
                 self.out.constraint_choice_sum += choices;
             }
+
+            // Mutation IV & V: Count lifetime and outlive sites
+            fn visit_item_fn(&mut self, i: &'ast syn::ItemFn) {
+                // Top-level functions: count arguments for lifetime mutations
+                self.out.lifetime_sites += i.sig.inputs.len() as u32;
+                // Also count the function itself for outlive mutations
+                self.out.outlive_sites += 1;
+                visit::visit_item_fn(self, i);
+            }
+
+            fn visit_impl_item_fn(&mut self, i: &'ast syn::ImplItemFn) {
+                if !self.in_trait_impl {
+                    // Inherent impl methods: count arguments for lifetime mutations
+                    self.out.lifetime_sites += i.sig.inputs.len() as u32;
+                    // Also count the method itself for outlive mutations
+                    self.out.outlive_sites += 1;
+                }
+                visit::visit_impl_item_fn(self, i);
+            }
         }
 
         let mut v = V {
             custom_traits: &custom_traits,
             impl_edge_traits_by_self: &impl_edge_traits_by_self,
             out: ConstraintChoiceMetrics::default(),
+            in_trait_impl: false,
         };
         v.visit_file(ast);
         v.out

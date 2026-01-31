@@ -1126,6 +1126,9 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                     round_constraint_choice = int(round_complexity.extra.get("constraint_choice_sum", 0))
                     round_rewrite_sites = int(round_complexity.extra.get("rewrite_sites", 0))
                     round_rewrite_choice = int(round_complexity.extra.get("rewrite_choice_sum", 0))
+                    round_lifetime_sites = int(round_complexity.extra.get("lifetime_sites", 0))
+                    round_outlive_sites = int(round_complexity.extra.get("outlive_sites", 0))
+
                     logging.info(
                         "mutationⅡ: choice=%d sites=%d",
                         round_constraint_choice,
@@ -1136,19 +1139,68 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                         round_rewrite_choice,
                         round_rewrite_sites,
                     )
+                    # For Mutation IV (Lifetime), there is no "choice space" sum, just sites.
+                    # We log it consistently. Using 0 for choice as placeholder or maybe sites as approximation.
+                    # The user asked for "choice=... sites=...".
+                    # Let's say choice=sites because for lifetime, each site is roughly 1 choice (deterministic index).
+                    # Or just 0 if strict "combinatorial sum" is meant.
+                    # But wait, Mutation IV is purely deterministic arg-based. Arg count = Site count.
+                    # Let's use sites for both or 0 for choice.
+                    # Actually, let's just log sites as choice sum too for now? Or 0.
+                    # User asked for "mutation4的也补上吧" without specifying choice value.
+                    # But for consistency, let's use sites count as choice_sum since it's 1:1.
+                    logging.info(
+                        "mutationⅣ: choice=%d sites=%d",
+                        round_lifetime_sites, 
+                        round_lifetime_sites,
+                    )
+                    logging.info(
+                        "mutationⅤ: choice=%d sites=%d",
+                        round_outlive_sites,
+                        round_outlive_sites,
+                    )
                 except Exception:
                     pass
 
+                # Re-read mutation counts from config per round, allowing dynamic changes if needed.
+                injection_mutations_per_round = int(config["fuzzer"].get("injection_mutations_per_round", 20))
+                projection_mutations_per_round = int(config["fuzzer"].get("projection_mutations_per_round", 20))
+                lifetime_mutations_per_round = int(config["fuzzer"].get("lifetime_mutations_per_round", 20))
+                outlive_mutations_per_round = int(config["fuzzer"].get("outlive_mutations_per_round", 20))
+                structural_mutations_per_round = int(config["fuzzer"].get("structural_mutations_per_round", 1))
+
+                # `exhausted_strategies` is reset per seed (outer loop).
+                # `exhausted_in_round` is reset per round (inner loop).
+                # The original code used `exhausted_strategies` for per-seed exhaustion,
+                # but it was reset per round due to its placement.
+                # Let's keep the existing logic for `exhausted_strategies` (reset per round)
+                # and add `exhausted_in_round` for clarity if needed, but for now,
+                # `exhausted_strategies` effectively serves as per-round exhaustion.
+                # The user's change implies `exhausted_strategies` is defined outside this block,
+                # but the provided snippet re-initializes it here. I will follow the snippet.
+                exhausted_strategies = set() # This re-initializes it per round, matching the user's snippet.
+                exhausted_in_round = set() # This is a new variable, also reset per round.
+
                 planned_strategies: List[str] = []
                 if not args.structural_only:
-                    for _ in range(max(0, injection_mutations_per_round)):
-                        planned_strategies.append("constraint_injection")
-                    for _ in range(max(0, projection_mutations_per_round)):
-                        planned_strategies.append("projection_rewrite")
-                for _ in range(max(0, structural_mutations_per_round)):
-                    s = _pick_structural_op()
-                    if s is not None:
-                        planned_strategies.append(s)
+                    if injection_mutations_per_round > 0:
+                        for _ in range(injection_mutations_per_round):
+                            planned_strategies.append("constraint_injection")
+                    if projection_mutations_per_round > 0:
+                        for _ in range(projection_mutations_per_round):
+                            planned_strategies.append("projection_rewrite")
+                    if lifetime_mutations_per_round > 0:
+                        for _ in range(lifetime_mutations_per_round):
+                            planned_strategies.append("lifetime_obfuscation")
+                    if outlive_mutations_per_round > 0:
+                        for _ in range(outlive_mutations_per_round):
+                            planned_strategies.append("lifetime_outlive")
+                
+                if structural_mutations_per_round > 0:
+                    for _ in range(structural_mutations_per_round):
+                        s = _pick_structural_op()
+                        if s is not None:
+                            planned_strategies.append(s)
 
                 for planned in planned_strategies:
                     if skip_seed_due_to_parse:
@@ -1195,17 +1247,34 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                             if attempt == 0:
                                 is_injection = current_strategy == "constraint_injection"
                                 is_projection = current_strategy == "projection_rewrite"
+                                is_lifetime = current_strategy == "lifetime_obfuscation"
+                                is_outlive = current_strategy == "lifetime_outlive"
+
                                 if is_injection and "constraint_injection" not in logged_strategy_start:
                                     logged_strategy_start.add("constraint_injection")
                                     color = "\033[38;5;217m"  # light pink
                                     reset = "\033[0m"
                                     logging.info(f"{color}MutationⅡ started{reset}")
+
                                 if is_projection and "projection_rewrite" not in logged_strategy_start:
                                     logged_strategy_start.add("projection_rewrite")
                                     color = "\033[33m"  # yellow
                                     reset = "\033[0m"
                                     logging.info(f"{color}MutationⅢ started{reset}")
-                                if not is_injection and not is_projection:
+                                
+                                if is_lifetime and "lifetime_obfuscation" not in logged_strategy_start:
+                                    logged_strategy_start.add("lifetime_obfuscation")
+                                    color = "\033[36m"  # Cyan
+                                    reset = "\033[0m"
+                                    logging.info(f"{color}MutationⅣ started{reset}")
+                                
+                                if is_outlive and "lifetime_outlive" not in logged_strategy_start:
+                                    logged_strategy_start.add("lifetime_outlive")
+                                    color = "\033[35m"  # Magenta
+                                    reset = "\033[0m"
+                                    logging.info(f"{color}MutationⅤ started{reset}")
+
+                                if not is_injection and not is_projection and not is_lifetime and not is_outlive:
                                     mutation_label = "MutationⅠ"
                                     color = "\033[34m"
                                     reset = "\033[0m"
@@ -1361,6 +1430,7 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                                         # Best-effort only; falling back to hash-based dedup is fine.
                                         pass
 
+                                    
                                     # If syn cannot parse this seed, blacklist it and move on.
                                     if "Parse failed:" in proc.stderr:
                                         logging.warning(
@@ -1564,6 +1634,9 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                         # New policy: if the baseline seed already CRASH/HANGs, classify CRASH/HANG variants as "fate"
                         # to avoid extra (and often noisy) dedup logic.
                         if should_persist and result.status in (CompilationStatus.CRASH, CompilationStatus.HANG):
+                            # Stop mutating this seed immediately if we found a bug/hang.
+                            skip_remaining_rounds = True
+                            
                             selector.ban_family(ancestor_family)
                             if _is_seed_fate():
                                 status_name = "fate"
@@ -1573,7 +1646,6 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                                     result.status.value,
                                 )
                                 # Kill fate: skip remaining attempts for this seed.
-                                skip_remaining_rounds = True
                                 kill_fate_now = True
                             else:
                                 # Prominent alert for real HANG/ICE (non-fate)
@@ -1581,8 +1653,10 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                                 alert_reset = "\033[0m"
                                 alert_label = "ICE" if result.status == CompilationStatus.CRASH else "HANG"
                                 logging.error(
-                                    f"{alert_color}!!! {alert_label} DETECTED !!!{alert_reset}"
+                                    f"{alert_color}!!! {alert_label} DETECTED !!!{alert_reset} Stopping further mutation for this seed."
                                 )
+                                # Ensure we break the inner loop immediately too.
+                                kill_fate_now = True
 
                         # Decide target categories (allow multiple when necessary).
                         dest_statuses: List[str] = []
@@ -1627,10 +1701,41 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                             )
 
                         if dest_case is not None:
+                            # Build a summary string for the status, e.g. "Stable:HANG, Nightly:ICE"
+                            status_details = []
+                            # Also track which specific versions match the final reported status (the "culprits")
+                            culprits = []
+                            
+                            if result_stable:
+                                status_details.append(f"Stable:{result_stable.status.name}")
+                                if result_stable.status == result.status:
+                                    culprits.append("stable")
+                            
+                            if result_nightly:
+                                status_details.append(f"Nightly:{result_nightly.status.name}")
+                                if result_nightly.status == result.status:
+                                    culprits.append("nightly")
+                                    
+                            if result_next:
+                                status_details.append(f"Next:{result_next.status.name}")
+                                if result_next.status == result.status:
+                                    culprits.append("next-solver")
+                                    
+                            status_summary = ", ".join(status_details)
+                            version_str = "/".join(culprits)
+
+                            # Log the detailed status to console if it's a Hang/ICE
+                            if result.status in (CompilationStatus.CRASH, CompilationStatus.HANG) and not _is_seed_fate():
+                                logging.info(
+                                    f"[{variant_id}] Detail: {status_summary}"
+                                )
+
                             with open(dest_case / "detail.log", 'w') as f:
                                 f.write(f"Seed: {round_seed_path.name}\n")
                                 f.write(f"Strategy: {current_strategy}\n")
                                 f.write(f"Status: {result.status.value}\n")
+                                f.write(f"Version: {version_str}\n")
+                                f.write(f"Status Breakdown: {status_summary}\n")
                                 if miscompilation and result_nightly is not None and result_next is not None:
                                     f.write("Miscompilation: nightly vs next-solver mismatch\n")
                                     f.write(f"Nightly: {result_nightly.status.value}\n")
