@@ -1855,7 +1855,13 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                                     )
     
                                 with open(dest_case / "detail.log", 'w') as f:
+                                    # Original seed/root for this lineage. Use the family id (falls back to seed.resolve()).
+                                    try:
+                                        root_name = Path(ancestor_family).name
+                                    except Exception:
+                                        root_name = str(ancestor_family)
                                     f.write(f"Seed: {round_seed_path.name}\n")
+                                    f.write(f"Root: {root_name}\n")
                                     f.write(f"Strategy: {current_strategy}\n")
                                     f.write(f"Status: {result.status.value}\n")
                                     f.write(f"Version: {version_str}\n")
