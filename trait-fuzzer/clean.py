@@ -117,6 +117,21 @@ def main():
     
     if args.all or args.logs:
         clean_directory(base_dir / "logs")
+        # Additionally truncate a couple of long-running log files instead
+        # of removing them entirely so processes that hold the files keep working.
+        def _truncate_if_exists(path: Path):
+            try:
+                if path.exists() and path.is_file():
+                    with open(path, "w"):
+                        pass
+                    print(f"Truncated {path}")
+            except Exception as e:
+                print(f"Failed to truncate {path}: {e}")
+
+        # Common locations: trait-fuzzer dir and project root
+        candidates = [base_dir / "my_fuzz.log", base_dir / "ollama.log", base_dir.parent / "my_fuzz.log", base_dir.parent / "ollama.log"]
+        for p in candidates:
+            _truncate_if_exists(p)
     else:
         print("Logs skipped (use --logs or --all to clean them)")
 
