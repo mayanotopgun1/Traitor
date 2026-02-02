@@ -1855,13 +1855,25 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                                     )
     
                                 with open(dest_case / "detail.log", 'w') as f:
-                                    # Original seed/root for this lineage. Use the family id (falls back to seed.resolve()).
+                                    # Write Seed and Root as paths relative to the repository root when possible.
+                                    repo_root = Path(__file__).resolve().parent.parent
                                     try:
-                                        root_name = Path(ancestor_family).name
+                                        seed_rel = str(round_seed_path.resolve().relative_to(repo_root))
                                     except Exception:
-                                        root_name = str(ancestor_family)
-                                    f.write(f"Seed: {round_seed_path.name}\n")
-                                    f.write(f"Root: {root_name}\n")
+                                        seed_rel = str(round_seed_path)
+
+                                    # ancestor_family may be a path string or an identifier; try to make it a Path
+                                    try:
+                                        fam_path = Path(ancestor_family)
+                                        try:
+                                            root_rel = str(fam_path.resolve().relative_to(repo_root))
+                                        except Exception:
+                                            root_rel = str(ancestor_family)
+                                    except Exception:
+                                        root_rel = str(ancestor_family)
+
+                                    f.write(f"Seed: {seed_rel}\n")
+                                    f.write(f"Root: {root_rel}\n")
                                     f.write(f"Strategy: {current_strategy}\n")
                                     f.write(f"Status: {result.status.value}\n")
                                     f.write(f"Version: {version_str}\n")
