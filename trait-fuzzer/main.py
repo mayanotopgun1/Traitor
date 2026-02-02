@@ -209,7 +209,8 @@ def enforce_results_limits(
             target = min(target, keep_fate_cases)
             _prune_oldest(fate_dirs, target, label="fate", log_first_only=True)
 
-    rewrite_dir = results_dir / "rewrites"
+    # Rewrites are now stored under the LLM subfolder instead of results/rewrites
+    rewrite_dir = results_dir.parent / "LLM" / "rewrites"
     if rewrite_dir.exists() and keep_rewritten_cases >= 0:
         rewritten_files = list(rewrite_dir.glob("*.rs"))
         if len(rewritten_files) > keep_rewritten_cases:
@@ -408,7 +409,7 @@ def parse_args_and_config(argv: Optional[List[str]] = None):
         "--keep-rewritten-cases",
         type=int,
         default=int(run_cfg.get("keep_rewritten_cases", -1)),
-        help="How many Rewritten seeds to keep under results/rewrites/ (oldest pruned). -1=unlimited",
+        help="How many Rewritten seeds to keep under LLM/rewrites/ (oldest pruned). -1=unlimited",
     )
     parser.add_argument(
         "--keep-fate-cases",
@@ -1065,7 +1066,8 @@ def worker_main(worker_index: int, total_workers: int, mutation_bin_path: Path):
                         
                         # Save it for debugging/future seeding
                         rewrite_name = f"llm_rewrite_{worker_index}_{i}_{seed_path.stem}.rs"
-                        rewrite_path = results_dir / "rewrites" / rewrite_name
+                        rewrite_dir = results_dir.parent / "LLM" / "rewrites"
+                        rewrite_path = rewrite_dir / rewrite_name
                         rewrite_path.parent.mkdir(parents=True, exist_ok=True)
                         with open(rewrite_path, "w", encoding="utf-8") as f:
                             f.write(rewritten_code)

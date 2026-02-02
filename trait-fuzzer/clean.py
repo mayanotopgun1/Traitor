@@ -111,7 +111,8 @@ def main():
     
     clean_directory(base_dir / "results" / "success")
     clean_directory(base_dir / "results" / "error")
-    clean_directory(base_dir / "results" / "rewrites")
+    # Rewrites moved under LLM/rewrites
+    clean_directory(base_dir / "LLM" / "rewrites")
     clean_directory(base_dir / "results_night" / "success")
     clean_directory(base_dir / "results_night" / "error")
     
