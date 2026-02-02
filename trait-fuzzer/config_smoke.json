@@ -18,10 +18,8 @@
         "max_cases": null,
         "max_results_gb": null,
         "min_free_gb": null,
-
         "keep_success_cases": 20,
         "keep_error_cases": 20,
-
         "promote_success": false,
         "new_seeds_max": 50,
         "new_seeds_prefix": "New"
@@ -34,13 +32,20 @@
     "compiler": {
         "enable_next_trait_solver": false,
         "enable_nightly_compile": false,
-        "rustc_cmd": ["rustc"],
-        "rustc_z_cmd": ["rustc", "+nightly"],
+        "rustc_cmd": [
+            "rustc"
+        ],
+        "rustc_z_cmd": [
+            "rustc",
+            "+nightly"
+        ],
         "next_trait_solver_flag": "-Znext-solver=globally"
     },
     "llm": {
-        "provider": "mock",
-        "model": "gpt-4",
-        "api_key_env": "OPENAI_API_KEY"
+        "provider": "ollama",
+        "model": "codellama",
+        "api_key_env": "OPENAI_API_KEY",
+        "enable_trait_rewrite": true,
+        "lock_path": "llm_global_lock_smoke.dir"
     }
 }

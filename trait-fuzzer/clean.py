@@ -111,6 +111,7 @@ def main():
     
     clean_directory(base_dir / "results" / "success")
     clean_directory(base_dir / "results" / "error")
+    clean_directory(base_dir / "results" / "rewrites")
     clean_directory(base_dir / "results_night" / "success")
     clean_directory(base_dir / "results_night" / "error")
     
@@ -136,9 +137,9 @@ def main():
         ],
     )
 
-    # Remove files or directories in the trait-fuzzer directory that start with 'temp'
+    # Remove files or directories in the trait-fuzzer directory that start with 'temp' or 'llm_' (lock dirs)
     for item in base_dir.iterdir():
-        if item.name.startswith("temp"):
+        if item.name.startswith("temp") or (item.name.startswith("llm_") and item.name.endswith(".dir")):
             try:
                 if item.is_dir():
                     shutil.rmtree(item)
@@ -153,12 +154,6 @@ def main():
     # Keep it conservative to avoid deleting unrelated build outputs.
     project_root = base_dir.parent
     remove_files_by_patterns(project_root, patterns=["temp_*.rs", "libtemp*.rlib"])
-
-    # Clean ICE files in the test directory
-    remove_files_by_patterns(
-        base_dir / "test",
-        patterns=["rustc-ice-*.txt"]
-    )
 
 if __name__ == "__main__":
     main()

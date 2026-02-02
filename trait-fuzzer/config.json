@@ -50,8 +50,14 @@
         "parallel_workers": 3
     },
     "llm": {
-        "provider": "mock",
-        "model": "gpt-4",
-        "api_key_env": "OPENAI_API_KEY"
+        "provider": "ollama",
+        "model": "qwen2.5-coder:14b",
+        "api_base": "http://127.0.0.1:10001",
+        "api_key_env": "OPENAI_API_KEY",
+        "enable_trait_rewrite": true,
+        "lock_path": "llm_global_lock_smoke.dir",
+        "options": {
+            "num_gpu": -1
+        }
     }
 }

@@ -1,16 +1,15 @@
-#![feature(const_trait_impl)]
-use std::marker::Destruct;
-mod foo {
-    trait T {}
-    pub type Alias<'a> =  T<>;
+
+trait Foo<'a>:  {
+    
 }
-use foo::*;
-const fn with_positive<F: for<'a> [const] Fn(&'a Alias<'a>) + [const] Destruct>((): F) {;}
 
- fn foo() {}
+trait Bar {
+    fn foo(&self) -> &  Foo<'a, Out = impl Sized + 'a>;
+}
 
-const BAR: () = {
-    with_positive(());
-};
+fn main() {
+    let x: & Bar = &();
+     _ = x.foo();
+}
 
-fn main() {}
+
