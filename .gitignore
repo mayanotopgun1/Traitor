@@ -21,6 +21,8 @@ trait-fuzzer/LLM/rewrites/
 trait-fuzzer/results/
 /trait-fuzzer/seeds/
 /trait-fuzzer/seeds/**
+trait-fuzzer/seeds/
 /trait-fuzzer/seeds_smoke/
 /trait-fuzzer/seeds_smoke/**
+trait-fuzzer/seeds_smoke/
 /trait-fuzzer/_upstream/
