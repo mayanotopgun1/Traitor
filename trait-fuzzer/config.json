@@ -1,21 +1,21 @@
 {
     "fuzzer": {
-        "iterations": 50000,
+        "iterations": 25000,
         "workers": 4,
         "worker_console_logging": false,
-        "mutations_per_seed": 8,
+        "mutations_per_seed": 5,
         "injection_mutations_per_round": 30,
         "projection_mutations_per_round": 30,
         "lifetime_mutations_per_round": 20,
         "outlive_mutations_per_round": 20,
         "structural_mutations_per_round": 1,
         "seed_selection_strategy": "ttdn_metric",
-        "max_time_per_case_sec": 10,
+        "max_time_per_case_sec": 15,
         "structural_subweights": {
             "add_impl": 0.50,
             "add_trait": 0.50
         },
-        "max_promotions_per_seed": 6
+        "max_promotions_per_seed": 1
     },
     "run": {
         "structural_only": false,
@@ -52,12 +52,13 @@
     "llm": {
         "provider": "ollama",
         "model": "qwen2.5-coder:14b",
-        "api_base": "http://127.0.0.1:10001",
+        "api_base": "http://127.0.0.1:12023",
         "api_key_env": "OPENAI_API_KEY",
         "enable_trait_rewrite": true,
         "lock_path": "llm_global_lock_smoke.dir",
         "options": {
-            "num_gpu": -1
+            "num_gpu": 48,
+            "num_thread": 32
         }
     }
 }

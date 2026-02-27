@@ -1,28 +1,26 @@
-﻿# 忽略种子文件
-/trait-fuzzer/seeds/
-/trait-fuzzer/seeds/**
-
-# 也不要上传本地 smoke seeds（临时验证用）
-/trait-fuzzer/seeds_smoke/
-/trait-fuzzer/seeds_smoke/**
 
 # 本地环境/上游仓库/构建产物（体积大且不可复现）
-/env/
-/rust/
-/trait-fuzzer/_upstream/
-/trait-fuzzer/mutation/mutation-AST/target/
-
+# 编辑器/系统杂项
+﻿# 忽略种子文件
+# 也不要上传本地 smoke seeds（临时验证用）
 # 运行产物/日志（通常巨大且频繁变化）
+.DS_Store
+/env/
+*.pyc
+**/__pycache__/
+*.pyo
+# Python 缓存
+/rust/
+trait-fuzzer/LLM/rewrites/
 /trait-fuzzer/logs/
 /trait-fuzzer/logs_*/
+/trait-fuzzer/mutation/mutation-AST/target/
 /trait-fuzzer/my_fuzz.log
 /trait-fuzzer/results/
 /trait-fuzzer/results_*/
-
-# Python 缓存
-**/__pycache__/
-*.pyc
-*.pyo
-
-# 编辑器/系统杂项
-.DS_Store
+trait-fuzzer/results/
+/trait-fuzzer/seeds/
+/trait-fuzzer/seeds/**
+/trait-fuzzer/seeds_smoke/
+/trait-fuzzer/seeds_smoke/**
+/trait-fuzzer/_upstream/

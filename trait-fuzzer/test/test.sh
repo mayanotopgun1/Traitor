@@ -12,7 +12,7 @@ case $MODE in
     set +e
     timeout --preserve-status 2s rustc +nightly -Z unpretty=ast-tree "$work_dir/bug.rs" >/dev/null 2>&1
     [ $? -ne 0 ] && exit 1
-    timeout --preserve-status 5s rustc +nightly -Z next-solver=globally "$work_dir/bug.rs" >/dev/null 2>&1
+    timeout --preserve-status 8s rustc +nightly  -Z next-solver=globally "$work_dir/bug.rs" >/dev/null 2>&1
     status=$?
     # 124, 137, 143 是 timeout 杀掉进程的状态码
     [[ $status -eq 124 || $status -eq 137 || $status -eq 143 ]] && exit 0 || exit 1

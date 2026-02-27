@@ -516,7 +516,10 @@ class SeedSelector:
                 "Filtered %d seeds due to internal-only features (rustc_attrs/lang_items/intrinsics/etc.)",
                 filtered,
             )
-        logging.info(f"Worker {self._shard_index}/{self._num_shards}: Assigned {len(self.seeds)} seeds (total pool: {len(valid_seeds)})")
+        logging.info(
+            f"Worker {self._shard_index}/{self._num_shards} (index range: 0..{self._num_shards - 1}): "
+            f"Assigned {len(self.seeds)} seeds (total pool: {len(valid_seeds)})"
+        )
         self.scores: Dict[Path, int] = {}
         self._ttdn = TTDNModel()
         self._ttdn_cache = {}  # (path, mtime_ns) -> score(int)
