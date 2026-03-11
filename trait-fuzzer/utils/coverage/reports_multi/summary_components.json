@@ -1,0 +1,464 @@
+[
+  {
+    "component": "rustc_hir_typeck",
+    "line_count": 28505,
+    "line_covered": 9,
+    "line_missed": 28496,
+    "line_percent": 0.03157340817400456
+  },
+  {
+    "component": "rustc_middle",
+    "line_count": 27516,
+    "line_covered": 869,
+    "line_missed": 26647,
+    "line_percent": 3.1581625236226194
+  },
+  {
+    "component": "rustc_trait_selection",
+    "line_count": 27485,
+    "line_covered": 32,
+    "line_missed": 27453,
+    "line_percent": 0.11642714207749681
+  },
+  {
+    "component": "rustc_hir_analysis",
+    "line_count": 19952,
+    "line_covered": 87,
+    "line_missed": 19865,
+    "line_percent": 0.436046511627907
+  },
+  {
+    "component": "rustc_borrowck",
+    "line_count": 18981,
+    "line_covered": 3,
+    "line_missed": 18978,
+    "line_percent": 0.0158052789631737
+  },
+  {
+    "component": "rustc_mir_transform",
+    "line_count": 18138,
+    "line_covered": 39,
+    "line_missed": 18099,
+    "line_percent": 0.2150181938471717
+  },
+  {
+    "component": "rustc_resolve",
+    "line_count": 16820,
+    "line_covered": 763,
+    "line_missed": 16057,
+    "line_percent": 4.536266349583829
+  },
+  {
+    "component": "rustc_target",
+    "line_count": 16011,
+    "line_covered": 296,
+    "line_missed": 15715,
+    "line_percent": 1.8487289988133158
+  },
+  {
+    "component": "rustc_codegen_llvm",
+    "line_count": 15546,
+    "line_covered": 366,
+    "line_missed": 15180,
+    "line_percent": 2.35430335777692
+  },
+  {
+    "component": "rustc_parse",
+    "line_count": 15416,
+    "line_covered": 3718,
+    "line_missed": 11698,
+    "line_percent": 24.117799688635184
+  },
+  {
+    "component": "rustc_codegen_ssa",
+    "line_count": 14835,
+    "line_covered": 142,
+    "line_missed": 14693,
+    "line_percent": 0.957195820694304
+  },
+  {
+    "component": "rustc_mir_build",
+    "line_count": 11805,
+    "line_covered": 10,
+    "line_missed": 11795,
+    "line_percent": 0.08470986869970351
+  },
+  {
+    "component": "rustc_const_eval",
+    "line_count": 11488,
+    "line_covered": 13,
+    "line_missed": 11475,
+    "line_percent": 0.11316155988857939
+  },
+  {
+    "component": "rustc_lint",
+    "line_count": 11431,
+    "line_covered": 686,
+    "line_missed": 10745,
+    "line_percent": 6.0012247397428045
+  },
+  {
+    "component": "rustc_ast_lowering",
+    "line_count": 8222,
+    "line_covered": 0,
+    "line_missed": 8222,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_builtin_macros",
+    "line_count": 8092,
+    "line_covered": 76,
+    "line_missed": 8016,
+    "line_percent": 0.9391992090954029
+  },
+  {
+    "component": "rustc_expand",
+    "line_count": 7476,
+    "line_covered": 1081,
+    "line_missed": 6395,
+    "line_percent": 14.459604066345639
+  },
+  {
+    "component": "rustc_infer",
+    "line_count": 5989,
+    "line_covered": 0,
+    "line_missed": 5989,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_metadata",
+    "line_count": 5896,
+    "line_covered": 349,
+    "line_missed": 5547,
+    "line_percent": 5.919267299864315
+  },
+  {
+    "component": "rustc_attr_parsing",
+    "line_count": 5429,
+    "line_covered": 308,
+    "line_missed": 5121,
+    "line_percent": 5.673236323448148
+  },
+  {
+    "component": "rustc_type_ir",
+    "line_count": 5189,
+    "line_covered": 78,
+    "line_missed": 5111,
+    "line_percent": 1.5031798034303334
+  },
+  {
+    "component": "rustc_public",
+    "line_count": 5134,
+    "line_covered": 0,
+    "line_missed": 5134,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_passes",
+    "line_count": 5063,
+    "line_covered": 60,
+    "line_missed": 5003,
+    "line_percent": 1.1850681414181314
+  },
+  {
+    "component": "rustc_next_trait_solver",
+    "line_count": 4946,
+    "line_covered": 0,
+    "line_missed": 4946,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_session",
+    "line_count": 4687,
+    "line_covered": 1384,
+    "line_missed": 3303,
+    "line_percent": 29.52848303819074
+  },
+  {
+    "component": "rustc_data_structures",
+    "line_count": 4637,
+    "line_covered": 645,
+    "line_missed": 3992,
+    "line_percent": 13.909855510028036
+  },
+  {
+    "component": "rustc_hir",
+    "line_count": 4211,
+    "line_covered": 131,
+    "line_missed": 4080,
+    "line_percent": 3.1109000237473285
+  },
+  {
+    "component": "rustc_span",
+    "line_count": 4147,
+    "line_covered": 1344,
+    "line_missed": 2803,
+    "line_percent": 32.40897034000482
+  },
+  {
+    "component": "rustc_ast",
+    "line_count": 4092,
+    "line_covered": 925,
+    "line_missed": 3167,
+    "line_percent": 22.605083088954057
+  },
+  {
+    "component": "rustc_ast_pretty",
+    "line_count": 3734,
+    "line_covered": 0,
+    "line_missed": 3734,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_mir_dataflow",
+    "line_count": 3462,
+    "line_covered": 0,
+    "line_missed": 3462,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_errors",
+    "line_count": 3337,
+    "line_covered": 748,
+    "line_missed": 2589,
+    "line_percent": 22.41534312256518
+  },
+  {
+    "component": "rustc_ty_utils",
+    "line_count": 2797,
+    "line_covered": 89,
+    "line_missed": 2708,
+    "line_percent": 3.181980693600286
+  },
+  {
+    "component": "rustc_abi",
+    "line_count": 2530,
+    "line_covered": 164,
+    "line_missed": 2366,
+    "line_percent": 6.482213438735178
+  },
+  {
+    "component": "rustc_hir_pretty",
+    "line_count": 2209,
+    "line_covered": 0,
+    "line_missed": 2209,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_monomorphize",
+    "line_count": 2176,
+    "line_covered": 19,
+    "line_missed": 2157,
+    "line_percent": 0.8731617647058824
+  },
+  {
+    "component": "rustc_pattern_analysis",
+    "line_count": 2168,
+    "line_covered": 0,
+    "line_missed": 2168,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_ast_passes",
+    "line_count": 1974,
+    "line_covered": 0,
+    "line_missed": 1974,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_thread_pool",
+    "line_count": 1971,
+    "line_covered": 0,
+    "line_missed": 1971,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_interface",
+    "line_count": 1915,
+    "line_covered": 598,
+    "line_missed": 1317,
+    "line_percent": 31.227154046997388
+  },
+  {
+    "component": "rustc_proc_macro",
+    "line_count": 1801,
+    "line_covered": 14,
+    "line_missed": 1787,
+    "line_percent": 0.7773459189339256
+  },
+  {
+    "component": "rustc_index",
+    "line_count": 1560,
+    "line_covered": 78,
+    "line_missed": 1482,
+    "line_percent": 5.0
+  },
+  {
+    "component": "rustc_driver_impl",
+    "line_count": 1501,
+    "line_covered": 295,
+    "line_missed": 1206,
+    "line_percent": 19.653564290473017
+  },
+  {
+    "component": "rustc_query_impl",
+    "line_count": 1477,
+    "line_covered": 275,
+    "line_missed": 1202,
+    "line_percent": 18.61882193635748
+  },
+  {
+    "component": "rustc_incremental",
+    "line_count": 1262,
+    "line_covered": 26,
+    "line_missed": 1236,
+    "line_percent": 2.0602218700475436
+  },
+  {
+    "component": "rustc_symbol_mangling",
+    "line_count": 1218,
+    "line_covered": 3,
+    "line_missed": 1215,
+    "line_percent": 0.24630541871921183
+  },
+  {
+    "component": "rustc_privacy",
+    "line_count": 1155,
+    "line_covered": 8,
+    "line_missed": 1147,
+    "line_percent": 0.6926406926406926
+  },
+  {
+    "component": "rustc_transmute",
+    "line_count": 890,
+    "line_covered": 0,
+    "line_missed": 890,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_sanitizers",
+    "line_count": 853,
+    "line_covered": 0,
+    "line_missed": 853,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_public_bridge",
+    "line_count": 795,
+    "line_covered": 0,
+    "line_missed": 795,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_serialize",
+    "line_count": 666,
+    "line_covered": 4,
+    "line_missed": 662,
+    "line_percent": 0.6006006006006006
+  },
+  {
+    "component": "rustc_lexer",
+    "line_count": 599,
+    "line_covered": 224,
+    "line_missed": 375,
+    "line_percent": 37.39565943238731
+  },
+  {
+    "component": "rustc_parse_format",
+    "line_count": 577,
+    "line_covered": 0,
+    "line_missed": 577,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_traits",
+    "line_count": 418,
+    "line_covered": 40,
+    "line_missed": 378,
+    "line_percent": 9.569377990430622
+  },
+  {
+    "component": "rustc_arena",
+    "line_count": 304,
+    "line_covered": 199,
+    "line_missed": 105,
+    "line_percent": 65.46052631578948
+  },
+  {
+    "component": "rustc_error_messages",
+    "line_count": 243,
+    "line_covered": 72,
+    "line_missed": 171,
+    "line_percent": 29.62962962962963
+  },
+  {
+    "component": "rustc_feature",
+    "line_count": 200,
+    "line_covered": 38,
+    "line_missed": 162,
+    "line_percent": 19.0
+  },
+  {
+    "component": "rustc_lint_defs",
+    "line_count": 189,
+    "line_covered": 34,
+    "line_missed": 155,
+    "line_percent": 17.98941798941799
+  },
+  {
+    "component": "rustc_ast_ir",
+    "line_count": 179,
+    "line_covered": 29,
+    "line_missed": 150,
+    "line_percent": 16.201117318435752
+  },
+  {
+    "component": "rustc_graphviz",
+    "line_count": 153,
+    "line_covered": 0,
+    "line_missed": 153,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_log",
+    "line_count": 128,
+    "line_covered": 59,
+    "line_missed": 69,
+    "line_percent": 46.09375
+  },
+  {
+    "component": "rustc_hir_id",
+    "line_count": 53,
+    "line_covered": 0,
+    "line_missed": 53,
+    "line_percent": 0.0
+  },
+  {
+    "component": "rustc_llvm",
+    "line_count": 52,
+    "line_covered": 26,
+    "line_missed": 26,
+    "line_percent": 50.0
+  },
+  {
+    "component": "rustc_hashes",
+    "line_count": 45,
+    "line_covered": 18,
+    "line_missed": 27,
+    "line_percent": 40.0
+  },
+  {
+    "component": "rustc_fs_util",
+    "line_count": 40,
+    "line_covered": 3,
+    "line_missed": 37,
+    "line_percent": 7.5
+  },
+  {
+    "component": "rustc_baked_icu_data",
+    "line_count": 18,
+    "line_covered": 0,
+    "line_missed": 18,
+    "line_percent": 0.0
+  }
+]

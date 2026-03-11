@@ -88,6 +88,32 @@ fn main() {
         return;
     }
 
+    if args.mode.as_str() == "ttdn_entities" {
+        let info = crate::ttdn::TtdnInfo::from_file(&syntax_tree);
+        let payload = serde_json::json!({
+            "types": info.types.iter().map(|x| x.to_string()).collect::<Vec<_>>(),
+            "traits": info.traits.iter().map(|x| x.to_string()).collect::<Vec<_>>(),
+            "impl_edges": info
+                .impl_edges
+                .iter()
+                .map(|(ty, tr)| serde_json::json!({"type": ty.to_string(), "trait": tr.to_string()}))
+                .collect::<Vec<_>>(),
+            "supertrait_edges": info
+                .supertrait_edges
+                .iter()
+                .map(|(tr, sup)| serde_json::json!({"trait": tr.to_string(), "supertrait": sup.to_string()}))
+                .collect::<Vec<_>>(),
+            "trait_assoc_types": info
+                .trait_assoc_types
+                .iter()
+                .map(|(tr, assoc)| serde_json::json!({"trait": tr.to_string(), "assoc": assoc.to_string()}))
+                .collect::<Vec<_>>(),
+        });
+        println!("{}", payload.to_string());
+        fs::write(&args.output, content).expect("Failed to write output file");
+        return;
+    }
+
     if args.mode.as_str() == "constraint_debug" {
         let sites = ConstraintInjectionMutator::collect_sites_with_candidates(&syntax_tree);
         println!("{}", serde_json::to_string(&sites).unwrap_or("[]".to_string()));

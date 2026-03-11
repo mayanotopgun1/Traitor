@@ -1,0 +1,152 @@
+Seed: /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/seeds/async_2/seed.rs
+Operator Key: async_2
+Operator Name: async_context_wrapping
+Target Type: S
+Target Trait: None
+Baseline Status: SUCCESS
+Mutated Status: ERROR
+Mutated Duration: 0.0889s
+
+=== baseline (stable) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== baseline (nightly) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== baseline (next) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (stable) ===
+Status: ERROR
+Return code: 1
+Stdout:
+
+Stderr:
+error: expected one of `,`, `:`, or `}`, found `!`
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/results/async_2/temp_cross_iter_1_seed_async_2_op1_mutated.rs:13:16
+   |
+12 |     async {
+   |     ----- `async` blocks are only allowed in Rust 2018 or later
+13 |         println!("{}", work(s));
+   |         -------^ expected one of `,`, `:`, or `}`
+   |         |
+   |         while parsing this struct field
+   |
+   = help: pass `--edition 2024` to `rustc`
+   = note: for more on editions, read https://doc.rust-lang.org/edition-guide
+
+error: expected one of `,`, `:`, or `}`, found `(`
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/results/async_2/temp_cross_iter_1_seed_async_2_op1_mutated.rs:13:28
+   |
+12 |     async {
+   |     ----- `async` blocks are only allowed in Rust 2018 or later
+13 |         println!("{}", work(s));
+   |                        ----^ expected one of `,`, `:`, or `}`
+   |                        |
+   |                        while parsing this struct field
+   |
+   = help: pass `--edition 2024` to `rustc`
+   = note: for more on editions, read https://doc.rust-lang.org/edition-guide
+help: try naming a field
+   |
+13 |         println!("{}", work: work(s));
+   |                        +++++
+
+error: aborting due to 2 previous errors
+
+
+
+=== mutated (nightly) ===
+Status: ERROR
+Return code: 1
+Stdout:
+
+Stderr:
+error: expected one of `,`, `:`, or `}`, found `!`
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/results/async_2/temp_cross_iter_1_seed_async_2_op1_mutated.rs:13:16
+   |
+12 |     async {
+   |     ----- `async` blocks are only allowed in Rust 2018 or later
+13 |         println!("{}", work(s));
+   |         -------^ expected one of `,`, `:`, or `}`
+   |         |
+   |         while parsing this struct field
+   |
+   = help: pass `--edition 2024` to `rustc`
+   = note: for more on editions, read https://doc.rust-lang.org/edition-guide
+
+error: expected one of `,`, `:`, or `}`, found `(`
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/results/async_2/temp_cross_iter_1_seed_async_2_op1_mutated.rs:13:28
+   |
+12 |     async {
+   |     ----- `async` blocks are only allowed in Rust 2018 or later
+13 |         println!("{}", work(s));
+   |                        ----^ expected one of `,`, `:`, or `}`
+   |                        |
+   |                        while parsing this struct field
+   |
+   = help: pass `--edition 2024` to `rustc`
+   = note: for more on editions, read https://doc.rust-lang.org/edition-guide
+help: try naming a field
+   |
+13 |         println!("{}", work: work(s));
+   |                        +++++
+
+error: aborting due to 2 previous errors
+
+
+
+=== mutated (next) ===
+Status: ERROR
+Return code: 1
+Stdout:
+
+Stderr:
+error: expected one of `,`, `:`, or `}`, found `!`
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/results/async_2/temp_cross_iter_1_seed_async_2_op1_mutated_next.rs:13:16
+   |
+12 |     async {
+   |     ----- `async` blocks are only allowed in Rust 2018 or later
+13 |         println!("{}", work(s));
+   |         -------^ expected one of `,`, `:`, or `}`
+   |         |
+   |         while parsing this struct field
+   |
+   = help: pass `--edition 2024` to `rustc`
+   = note: for more on editions, read https://doc.rust-lang.org/edition-guide
+
+error: expected one of `,`, `:`, or `}`, found `(`
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/results/async_2/temp_cross_iter_1_seed_async_2_op1_mutated_next.rs:13:28
+   |
+12 |     async {
+   |     ----- `async` blocks are only allowed in Rust 2018 or later
+13 |         println!("{}", work(s));
+   |                        ----^ expected one of `,`, `:`, or `}`
+   |                        |
+   |                        while parsing this struct field
+   |
+   = help: pass `--edition 2024` to `rustc`
+   = note: for more on editions, read https://doc.rust-lang.org/edition-guide
+help: try naming a field
+   |
+13 |         println!("{}", work: work(s));
+   |                        +++++
+
+error: aborting due to 2 previous errors
+
+

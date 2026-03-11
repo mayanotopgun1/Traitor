@@ -1,0 +1,32 @@
+{
+  "status": "running",
+  "input_dataset": "/home/laix/Study/Traitor/trait-fuzzer/seeds",
+  "output_dir": "/home/laix/Study/Traitor/trait-fuzzer/Traitor_Agent/trait_dense_seeds",
+  "summary_jsonl": "/home/laix/Study/Traitor/trait-fuzzer/Traitor_Agent/run_summary.jsonl",
+  "compile_basis_cmd": [
+    "rustc",
+    "+nightly"
+  ],
+  "total_original_seeds": 22602,
+  "original_compile_success": 1394,
+  "original_compile_fail": 2206,
+  "original_crash_or_hang": 4,
+  "processed_after_filter": 1394,
+  "stage1_generated_seeds": 1016,
+  "stage1_dead_by_tsa": 70,
+  "stage1_dead_by_error": 308,
+  "stage2_generated_seeds": 667,
+  "stage2_dead_by_error": 282,
+  "stage2_attempted_total": 1034,
+  "stage2_compile_pass": 752,
+  "stage2_compile_fail": 282,
+  "stage2_feature_selected_counts": {
+    "RPITIT": 203,
+    "specialization": 166,
+    "TAIT": 181,
+    "dynamic_dispatch": 143,
+    "RPIT": 272,
+    "GAT": 69
+  },
+  "surprise_cases": 0
+}

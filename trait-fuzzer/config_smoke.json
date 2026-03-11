@@ -32,6 +32,14 @@
     "compiler": {
         "enable_next_trait_solver": false,
         "enable_nightly_compile": false,
+        "enable_gccrs": false,
+        "gccrs_cmd": [
+            "gccrs"
+        ],
+        "gccrs_extra_args": [
+            "-c",
+            "-frust-incomplete-and-experimental-compiler-do-not-use"
+        ],
         "rustc_cmd": [
             "rustc"
         ],

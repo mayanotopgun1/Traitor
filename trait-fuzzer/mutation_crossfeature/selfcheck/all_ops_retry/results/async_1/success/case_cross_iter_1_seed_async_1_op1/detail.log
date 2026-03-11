@@ -1,0 +1,56 @@
+Seed: /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops_retry/seeds/async_1/seed.rs
+Operator Key: async_1
+Operator Name: auto_trait_forcing
+Target Type: S
+Target Trait: Work
+Baseline Status: SUCCESS
+Mutated Status: SUCCESS
+Mutated Duration: 0.1606s
+
+=== baseline (stable) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== baseline (nightly) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== baseline (next) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (stable) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (nightly) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (next) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+

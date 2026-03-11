@@ -1,0 +1,102 @@
+[
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case1.rs",
+    "slug": "001_case1",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 19891,
+    "line_missed": 601301,
+    "line_percent": 3.2020695694728847
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case10.rs",
+    "slug": "002_case10",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 19733,
+    "line_missed": 601459,
+    "line_percent": 3.1766345992865332
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case2.rs",
+    "slug": "003_case2",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 20484,
+    "line_missed": 600708,
+    "line_percent": 3.2975311980836843
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case3.rs",
+    "slug": "004_case3",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 19141,
+    "line_missed": 602051,
+    "line_percent": 3.0813339514996976
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case4.rs",
+    "slug": "005_case4",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 20164,
+    "line_missed": 601028,
+    "line_percent": 3.246017334415124
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case5.rs",
+    "slug": "006_case5",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 19390,
+    "line_missed": 601802,
+    "line_percent": 3.1214181766667957
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case6.rs",
+    "slug": "007_case6",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 18173,
+    "line_missed": 603019,
+    "line_percent": 2.925504513902304
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case7.rs",
+    "slug": "008_case7",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 20280,
+    "line_missed": 600912,
+    "line_percent": 3.264691109994977
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case8.rs",
+    "slug": "009_case8",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 19686,
+    "line_missed": 601506,
+    "line_percent": 3.1690685005602135
+  },
+  {
+    "case": "/home/laix/Study/Traitor/trait-fuzzer/utils/coverage/case/case9.rs",
+    "slug": "010_case9",
+    "rustc_exit": 1,
+    "profraw_count": 2,
+    "line_count": 621192,
+    "line_covered": 20696,
+    "line_missed": 600496,
+    "line_percent": 3.331659132764105
+  }
+]

@@ -1,0 +1,29 @@
+{
+  "total_seeds": 1,
+  "selected_operators": [
+    "const_1"
+  ],
+  "ignored_operators": [],
+  "skipped_by_guard": {
+    "const_1": 0
+  },
+  "stats": {
+    "success": 1,
+    "error": 0,
+    "hang": 0,
+    "crash": 0,
+    "fate": 0,
+    "unknown": 0
+  },
+  "per_operator_stats": {
+    "const_1": {
+      "success": 1,
+      "error": 0,
+      "hang": 0,
+      "crash": 0,
+      "fate": 0,
+      "unknown": 0
+    }
+  },
+  "results_root": "/home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/results/const_1"
+}

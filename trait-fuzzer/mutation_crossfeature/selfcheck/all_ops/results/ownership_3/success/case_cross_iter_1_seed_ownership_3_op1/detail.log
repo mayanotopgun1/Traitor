@@ -1,0 +1,56 @@
+Seed: /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops/seeds/ownership_3/seed.rs
+Operator Key: ownership_3
+Operator Name: drop_impl_injection
+Target Type: S
+Target Trait: None
+Baseline Status: SUCCESS
+Mutated Status: SUCCESS
+Mutated Duration: 0.1563s
+
+=== baseline (stable) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== baseline (nightly) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== baseline (next) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (stable) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (nightly) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (next) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+

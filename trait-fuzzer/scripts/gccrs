@@ -1,0 +1,141 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export LANG="C"
+export LC_ALL="C"
+export LANGUAGE="en_US:en"
+
+TRAIT_FUZZER_ROOT="${TRAIT_FUZZER_ROOT:-/home/laix/Study/Traitor/trait-fuzzer}"
+CONFIG_PATH="${TRAIT_FUZZER_ROOT}/config.json"
+
+resolve_gccrs_bin() {
+    if [[ -n "${GCCRS_BIN:-}" ]]; then
+        echo "$GCCRS_BIN"
+        return
+    fi
+
+    if [[ -f "$CONFIG_PATH" ]]; then
+        local from_cfg
+        from_cfg="$(python3 - "$CONFIG_PATH" <<'PY'
+import json
+import sys
+
+cfg = sys.argv[1]
+try:
+    with open(cfg, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    cmd = data.get("compiler", {}).get("gccrs_cmd", [])
+    if isinstance(cmd, list) and cmd:
+        print(str(cmd[0]))
+    elif isinstance(cmd, str) and cmd:
+        print(cmd)
+except Exception:
+    pass
+PY
+)"
+        if [[ -n "$from_cfg" ]]; then
+            echo "$from_cfg"
+            return
+        fi
+    fi
+
+    if [[ -x "${TRAIT_FUZZER_ROOT}/gccrs/build/gcc/crab1" ]]; then
+        echo "${TRAIT_FUZZER_ROOT}/gccrs/build/gcc/crab1"
+        return
+    fi
+
+    echo "crab1"
+}
+
+has_flag() {
+    local target="$1"
+    shift
+    local arg
+    for arg in "$@"; do
+        if [[ "$arg" == "$target" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+GCCRS_BIN="$(resolve_gccrs_bin)"
+EXP_FLAG="-frust-incomplete-and-experimental-compiler-do-not-use"
+
+if [[ "$#" -eq 0 ]]; then
+    echo "usage: gccrs <file.rs> [compiler args...] [--nocore]"
+    exit 2
+fi
+
+for arg in "$@"; do
+    if [[ "$arg" == "-h" || "$arg" == "--help" || "$arg" == "--version" ]]; then
+        exec "$GCCRS_BIN" "$@"
+    fi
+done
+
+nocore_mode=0
+source_file=""
+declare -a passthrough
+
+for arg in "$@"; do
+    if [[ "$arg" == "--nocore" ]]; then
+        nocore_mode=1
+        continue
+    fi
+    if [[ -z "$source_file" && "$arg" != -* ]]; then
+        source_file="$arg"
+    fi
+    passthrough+=("$arg")
+done
+
+if [[ -z "$source_file" ]]; then
+    echo "error: missing source .rs file"
+    echo "usage: gccrs <file.rs> [compiler args...] [--nocore]"
+    exit 2
+fi
+
+if ! has_flag "$EXP_FLAG" "${passthrough[@]}"; then
+    passthrough+=("$EXP_FLAG")
+fi
+
+if ! has_flag "-c" "${passthrough[@]}" \
+    && ! has_flag "-S" "${passthrough[@]}" \
+    && ! has_flag "-E" "${passthrough[@]}"; then
+    passthrough+=("-c")
+fi
+
+if [[ "$nocore_mode" -eq 0 ]]; then
+    exec "$GCCRS_BIN" "${passthrough[@]}"
+fi
+
+if grep -q '#!\[no_core\]' "$source_file" 2>/dev/null; then
+    exec "$GCCRS_BIN" "${passthrough[@]}"
+fi
+
+tmp_dir="$(mktemp -d)"
+tmp_file="${tmp_dir}/nocore_wrapper.rs"
+cleanup() {
+    rm -rf "$tmp_dir"
+}
+trap cleanup EXIT
+
+cat >"$tmp_file" <<'EOF'
+#![feature(no_core, lang_items)]
+#![no_core]
+
+#[lang = "sized"]
+pub trait Sized {}
+
+EOF
+cat "$source_file" >> "$tmp_file"
+
+declare -a final_args
+for arg in "${passthrough[@]}"; do
+    if [[ "$arg" == "$source_file" ]]; then
+        final_args+=("$tmp_file")
+    else
+        final_args+=("$arg")
+    fi
+done
+
+exec "$GCCRS_BIN" "${final_args[@]}"

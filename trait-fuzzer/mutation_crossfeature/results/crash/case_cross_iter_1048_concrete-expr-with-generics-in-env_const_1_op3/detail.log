@@ -1,0 +1,329 @@
+Seed: /home/laix/Study/Traitor/trait-fuzzer/seeds/rust-official/tests_ui/const-generics/mgca/concrete-expr-with-generics-in-env.rs
+Operator Key: const_1
+Operator Name: associated_constant_injection
+Target Type: S
+Target Trait: Tr
+Baseline Status: ERROR
+Mutated Status: CRASH
+Mutated Duration: 0.2013s
+
+=== baseline (stable) ===
+Status: ERROR
+Return code: 1
+Stdout:
+
+Stderr:
+error[E0554]: `#![feature]` may not be used on the stable release channel
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline.rs:4:1
+  |
+4 | #![feature(min_generic_const_args, generic_const_items)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: aborting due to 1 previous error
+
+For more information about this error, try `rustc --explain E0554`.
+
+
+=== baseline (nightly) ===
+Status: ERROR
+Return code: 1
+Stdout:
+
+Stderr:
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline.rs:7:7
+  |
+7 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline.rs:9:7
+  |
+9 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline.rs:11:7
+   |
+11 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline.rs:18:7
+   |
+18 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline.rs:20:7
+   |
+20 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline.rs:22:7
+   |
+22 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: aborting due to 6 previous errors
+
+
+
+=== baseline (next) ===
+Status: ERROR
+Return code: 1
+Stdout:
+
+Stderr:
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline_next.rs:7:7
+  |
+7 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline_next.rs:9:7
+  |
+9 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline_next.rs:11:7
+   |
+11 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline_next.rs:18:7
+   |
+18 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline_next.rs:20:7
+   |
+20 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_baseline_next.rs:22:7
+   |
+22 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: aborting due to 6 previous errors
+
+
+
+=== mutated (stable) ===
+Status: CRASH
+Return code: 101
+Stdout:
+
+Stderr:
+error[E0554]: `#![feature]` may not be used on the stable release channel
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:2:1
+  |
+2 | #![feature(min_generic_const_args, generic_const_items)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error: internal compiler error: compiler/rustc_hir_typeck/src/lib.rs:126:9: can't type-check body of DefId(0:23 ~ temp_cross_iter_1048_concrete_expr_with_generics_in_env_const_1_op3_mutated[5c0c]::{impl#0}::NEW_CONST)
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:25:5
+   |
+25 |     const NEW_CONST: usize = 3; // Added implementation for the new constant
+   |     ^^^^^^^^^^^^^^^^^^^^^^
+
+
+thread 'rustc' (1055840) panicked at compiler/rustc_hir_typeck/src/lib.rs:126:9:
+Box<dyn Any>
+stack backtrace:
+   0:     0x7f68dfce2193 - <std::sys::backtrace::BacktraceLock::print::DisplayBacktrace as core::fmt::Display>::fmt::h1851ca2a850bd9a9
+   1:     0x7f68e04476c8 - core::fmt::write::h22467d3ad5dd5554
+   2:     0x7f68e18e93b6 - std::io::Write::write_fmt::h5e3b6a876f7a20bf
+   3:     0x7f68dfcaf835 - std::panicking::default_hook::{{closure}}::he43c3ac33dfa4b50
+   4:     0x7f68dfcaf663 - std::panicking::default_hook::hd124da54acf1152f
+   5:     0x7f68ded3ee67 - std[6c2a84ad8a8dd4fe]::panicking::update_hook::<alloc[9e645bc090c49844]::boxed::Box<rustc_driver_impl[1d9845581eaa47ce]::install_ice_hook::{closure#1}>>::{closure#0}
+   6:     0x7f68dfcafb62 - std::panicking::panic_with_hook::h9b5f1f19954f65a8
+   7:     0x7f68ded7b991 - std[6c2a84ad8a8dd4fe]::panicking::begin_panic::<rustc_errors[7d3d66eeb6ee8b55]::ExplicitBug>::{closure#0}
+   8:     0x7f68ded6bc36 - std[6c2a84ad8a8dd4fe]::sys::backtrace::__rust_end_short_backtrace::<std[6c2a84ad8a8dd4fe]::panicking::begin_panic<rustc_errors[7d3d66eeb6ee8b55]::ExplicitBug>::{closure#0}, !>
+   9:     0x7f68ded6ba3f - std[6c2a84ad8a8dd4fe]::panicking::begin_panic::<rustc_errors[7d3d66eeb6ee8b55]::ExplicitBug>
+  10:     0x7f68ded8dbc1 - <rustc_errors[7d3d66eeb6ee8b55]::diagnostic::BugAbort as rustc_errors[7d3d66eeb6ee8b55]::diagnostic::EmissionGuarantee>::emit_producing_guarantee
+  11:     0x7f68df2ceb6c - <rustc_errors[7d3d66eeb6ee8b55]::DiagCtxtHandle>::span_bug::<rustc_span[58ae59e8fd208579]::span_encoding::Span, alloc[9e645bc090c49844]::string::String>
+  12:     0x7f68df2eeb36 - rustc_middle[f493ae294297be1]::util::bug::opt_span_bug_fmt::<rustc_span[58ae59e8fd208579]::span_encoding::Span>::{closure#0}
+  13:     0x7f68df2efc02 - rustc_middle[f493ae294297be1]::ty::context::tls::with_opt::<rustc_middle[f493ae294297be1]::util::bug::opt_span_bug_fmt<rustc_span[58ae59e8fd208579]::span_encoding::Span>::{closure#0}, !>::{closure#0}
+  14:     0x7f68df2dff00 - rustc_middle[f493ae294297be1]::ty::context::tls::with_context_opt::<rustc_middle[f493ae294297be1]::ty::context::tls::with_opt<rustc_middle[f493ae294297be1]::util::bug::opt_span_bug_fmt<rustc_span[58ae59e8fd208579]::span_encoding::Span>::{closure#0}, !>::{closure#0}, !>
+  15:     0x7f68dcbedc28 - rustc_middle[f493ae294297be1]::util::bug::span_bug_fmt::<rustc_span[58ae59e8fd208579]::span_encoding::Span>
+  16:     0x7f68e1603681 - rustc_hir_typeck[5b7b464d31f14280]::typeck_with_inspect::{closure#0}
+  17:     0x7f68e15fc270 - rustc_query_impl[b186b72090195238]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[b186b72090195238]::query_impl::typeck::dynamic_query::{closure#2}::{closure#0}, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 8usize]>>
+  18:     0x7f68e07634f7 - rustc_query_system[39372781df04df7]::query::plumbing::try_execute_query::<rustc_query_impl[b186b72090195238]::DynamicConfig<rustc_data_structures[f3023ef8aa14917]::vec_cache::VecCache<rustc_span[58ae59e8fd208579]::def_id::LocalDefId, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 8usize]>, rustc_query_system[39372781df04df7]::dep_graph::graph::DepNodeIndex>, false, false, false>, rustc_query_impl[b186b72090195238]::plumbing::QueryCtxt, false>
+  19:     0x7f68e0762dc9 - rustc_query_impl[b186b72090195238]::query_impl::typeck::get_query_non_incr::__rust_end_short_backtrace
+  20:     0x7f68e0807f23 - rustc_mir_build[b793393933db508f]::thir::pattern::check_match::check_match
+  21:     0x7f68e08072db - rustc_query_impl[b186b72090195238]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[b186b72090195238]::query_impl::check_match::dynamic_query::{closure#2}::{closure#0}, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 1usize]>>
+  22:     0x7f68e0a728ad - rustc_query_system[39372781df04df7]::query::plumbing::try_execute_query::<rustc_query_impl[b186b72090195238]::DynamicConfig<rustc_data_structures[f3023ef8aa14917]::vec_cache::VecCache<rustc_span[58ae59e8fd208579]::def_id::LocalDefId, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 1usize]>, rustc_query_system[39372781df04df7]::dep_graph::graph::DepNodeIndex>, false, false, false>, rustc_query_impl[b186b72090195238]::plumbing::QueryCtxt, false>
+  23:     0x7f68e0a7257d - rustc_query_impl[b186b72090195238]::query_impl::check_match::get_query_non_incr::__rust_end_short_backtrace
+  24:     0x7f68e080f69e - rustc_mir_build[b793393933db508f]::builder::build_mir
+  25:     0x7f68e0442229 - rustc_mir_transform[4fe749cab4fe73d3]::mir_built
+  26:     0x7f68e04421f3 - rustc_query_impl[b186b72090195238]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[b186b72090195238]::query_impl::mir_built::dynamic_query::{closure#2}::{closure#0}, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 8usize]>>
+  27:     0x7f68e07634f7 - rustc_query_system[39372781df04df7]::query::plumbing::try_execute_query::<rustc_query_impl[b186b72090195238]::DynamicConfig<rustc_data_structures[f3023ef8aa14917]::vec_cache::VecCache<rustc_span[58ae59e8fd208579]::def_id::LocalDefId, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 8usize]>, rustc_query_system[39372781df04df7]::dep_graph::graph::DepNodeIndex>, false, false, false>, rustc_query_impl[b186b72090195238]::plumbing::QueryCtxt, false>
+  28:     0x7f68e0762f49 - rustc_query_impl[b186b72090195238]::query_impl::mir_built::get_query_non_incr::__rust_end_short_backtrace
+  29:     0x7f68e0546d55 - rustc_query_impl[b186b72090195238]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[b186b72090195238]::query_impl::trivial_const::dynamic_query::{closure#2}::{closure#0}, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 32usize]>>
+  30:     0x7f68e0545d2c - rustc_query_system[39372781df04df7]::query::plumbing::try_execute_query::<rustc_query_impl[b186b72090195238]::DynamicConfig<rustc_query_system[39372781df04df7]::query::caches::DefIdCache<rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 32usize]>>, false, false, false>, rustc_query_impl[b186b72090195238]::plumbing::QueryCtxt, false>
+  31:     0x7f68e05455a0 - rustc_query_impl[b186b72090195238]::query_impl::trivial_const::get_query_non_incr::__rust_end_short_backtrace
+  32:     0x7f68e1427fad - rustc_const_eval[7cc6434d2cb88309]::const_eval::eval_queries::eval_to_const_value_raw_provider
+  33:     0x7f68e1427cd4 - rustc_query_impl[b186b72090195238]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[b186b72090195238]::query_impl::eval_to_const_value_raw::dynamic_query::{closure#2}::{closure#0}, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 24usize]>>
+  34:     0x7f68e1426681 - rustc_query_system[39372781df04df7]::query::plumbing::try_execute_query::<rustc_query_impl[b186b72090195238]::DynamicConfig<rustc_query_system[39372781df04df7]::query::caches::DefaultCache<rustc_middle[f493ae294297be1]::ty::PseudoCanonicalInput<rustc_middle[f493ae294297be1]::mir::interpret::GlobalId>, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 24usize]>>, false, true, false>, rustc_query_impl[b186b72090195238]::plumbing::QueryCtxt, false>
+  35:     0x7f68e14261f3 - rustc_query_impl[b186b72090195238]::query_impl::eval_to_const_value_raw::get_query_non_incr::__rust_end_short_backtrace
+  36:     0x7f68e1174ab9 - <rustc_middle[f493ae294297be1]::ty::context::TyCtxt>::const_eval_resolve
+  37:     0x7f68dd2a31a5 - <rustc_mir_transform[4fe749cab4fe73d3]::known_panics_lint::ConstPropagator as rustc_middle[f493ae294297be1]::mir::visit::Visitor>::visit_assign
+  38:     0x7f68dd29c9eb - <rustc_mir_transform[4fe749cab4fe73d3]::known_panics_lint::ConstPropagator as rustc_middle[f493ae294297be1]::mir::visit::Visitor>::visit_body
+  39:     0x7f68e1509c54 - <rustc_mir_transform[4fe749cab4fe73d3]::known_panics_lint::KnownPanicsLint as rustc_mir_transform[4fe749cab4fe73d3]::pass_manager::MirLint>::run_lint
+  40:     0x7f68e0443bd0 - rustc_mir_transform[4fe749cab4fe73d3]::run_analysis_to_runtime_passes
+  41:     0x7f68e0992400 - rustc_mir_transform[4fe749cab4fe73d3]::mir_drops_elaborated_and_const_checked
+  42:     0x7f68e0991da9 - rustc_query_impl[b186b72090195238]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[b186b72090195238]::query_impl::mir_drops_elaborated_and_const_checked::dynamic_query::{closure#2}::{closure#0}, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 8usize]>>
+  43:     0x7f68e07634f7 - rustc_query_system[39372781df04df7]::query::plumbing::try_execute_query::<rustc_query_impl[b186b72090195238]::DynamicConfig<rustc_data_structures[f3023ef8aa14917]::vec_cache::VecCache<rustc_span[58ae59e8fd208579]::def_id::LocalDefId, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 8usize]>, rustc_query_system[39372781df04df7]::dep_graph::graph::DepNodeIndex>, false, false, false>, rustc_query_impl[b186b72090195238]::plumbing::QueryCtxt, false>
+  44:     0x7f68e0762b89 - rustc_query_impl[b186b72090195238]::query_impl::mir_drops_elaborated_and_const_checked::get_query_non_incr::__rust_end_short_backtrace
+  45:     0x7f68e075fe80 - <rustc_middle[f493ae294297be1]::ty::context::TyCtxt>::par_hir_body_owners::<rustc_interface[cb6d9a2205ff8f81]::passes::run_required_analyses::{closure#1}::{closure#0}>::{closure#0}
+  46:     0x7f68e075d5a6 - rustc_interface[cb6d9a2205ff8f81]::passes::analysis
+  47:     0x7f68e075ca33 - rustc_query_impl[b186b72090195238]::plumbing::__rust_begin_short_backtrace::<rustc_query_impl[b186b72090195238]::query_impl::analysis::dynamic_query::{closure#2}::{closure#0}, rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 0usize]>>
+  48:     0x7f68e15d5b0e - rustc_query_system[39372781df04df7]::query::plumbing::try_execute_query::<rustc_query_impl[b186b72090195238]::DynamicConfig<rustc_query_system[39372781df04df7]::query::caches::SingleCache<rustc_middle[f493ae294297be1]::query::erase::Erased<[u8; 0usize]>>, false, false, false>, rustc_query_impl[b186b72090195238]::plumbing::QueryCtxt, false>
+  49:     0x7f68e15d5746 - rustc_query_impl[b186b72090195238]::query_impl::analysis::get_query_non_incr::__rust_end_short_backtrace
+  50:     0x7f68e17bcd10 - <rustc_interface[cb6d9a2205ff8f81]::passes::create_and_enter_global_ctxt<core[5424e89100fc38d5]::option::Option<rustc_interface[cb6d9a2205ff8f81]::queries::Linker>, rustc_driver_impl[1d9845581eaa47ce]::run_compiler::{closure#0}::{closure#2}>::{closure#2} as core[5424e89100fc38d5]::ops::function::FnOnce<(&rustc_session[25e8a112773a0ca7]::session::Session, rustc_middle[f493ae294297be1]::ty::context::CurrentGcx, alloc[9e645bc090c49844]::sync::Arc<rustc_data_structures[f3023ef8aa14917]::jobserver::Proxy>, &std[6c2a84ad8a8dd4fe]::sync::once_lock::OnceLock<rustc_middle[f493ae294297be1]::ty::context::GlobalCtxt>, &rustc_data_structures[f3023ef8aa14917]::sync::worker_local::WorkerLocal<rustc_middle[f493ae294297be1]::arena::Arena>, &rustc_data_structures[f3023ef8aa14917]::sync::worker_local::WorkerLocal<rustc_hir[12fd4e3ef5d937a2]::Arena>, rustc_driver_impl[1d9845581eaa47ce]::run_compiler::{closure#0}::{closure#2})>>::call_once::{shim:vtable#0}
+  51:     0x7f68e1634b85 - rustc_interface[cb6d9a2205ff8f81]::interface::run_compiler::<(), rustc_driver_impl[1d9845581eaa47ce]::run_compiler::{closure#0}>::{closure#1}
+  52:     0x7f68e1585194 - std[6c2a84ad8a8dd4fe]::sys::backtrace::__rust_begin_short_backtrace::<rustc_interface[cb6d9a2205ff8f81]::util::run_in_thread_with_globals<rustc_interface[cb6d9a2205ff8f81]::util::run_in_thread_pool_with_globals<rustc_interface[cb6d9a2205ff8f81]::interface::run_compiler<(), rustc_driver_impl[1d9845581eaa47ce]::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>
+  53:     0x7f68e1584f67 - <std[6c2a84ad8a8dd4fe]::thread::lifecycle::spawn_unchecked<rustc_interface[cb6d9a2205ff8f81]::util::run_in_thread_with_globals<rustc_interface[cb6d9a2205ff8f81]::util::run_in_thread_pool_with_globals<rustc_interface[cb6d9a2205ff8f81]::interface::run_compiler<(), rustc_driver_impl[1d9845581eaa47ce]::run_compiler::{closure#0}>::{closure#1}, ()>::{closure#0}, ()>::{closure#0}::{closure#0}, ()>::{closure#1} as core[5424e89100fc38d5]::ops::function::FnOnce<()>>::call_once::{shim:vtable#0}
+  54:     0x7f68e1588538 - std::sys::thread::unix::Thread::new::thread_start::hc71bde616ea8b6e9
+  55:     0x7f68db1de609 - start_thread
+                               at /build/glibc-B3wQXB/glibc-2.31/nptl/pthread_create.c:477:8
+  56:     0x7f68db103353 - clone
+                               at /build/glibc-B3wQXB/glibc-2.31/misc/../sysdeps/unix/sysv/linux/x86_64/clone.S:95:0
+  57:                0x0 - <unknown>
+
+note: we would appreciate a bug report: https://github.com/rust-lang/rust/issues/new?labels=C-bug%2C+I-ICE%2C+T-compiler&template=ice.md
+
+note: rustc 1.93.1 (01f6ddf75 2026-02-11) running on x86_64-unknown-linux-gnu
+
+query stack during panic:
+#0 [typeck] type-checking `<impl at /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:17:1: 17:33>::NEW_CONST`
+#1 [check_match] match-checking `<impl at /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:17:1: 17:33>::NEW_CONST`
+... and 5 other queries... use `env RUST_BACKTRACE=1` to see the full query stack
+error: aborting due to 2 previous errors
+
+For more information about this error, try `rustc --explain E0554`.
+
+
+=== mutated (nightly) ===
+Status: ERROR
+Return code: 1
+Stdout:
+
+Stderr:
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:5:7
+  |
+5 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:7:7
+  |
+7 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:9:7
+  |
+9 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:11:7
+   |
+11 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:18:7
+   |
+18 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:20:7
+   |
+20 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:22:7
+   |
+22 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated.rs:24:7
+   |
+24 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: aborting due to 8 previous errors
+
+
+
+=== mutated (next) ===
+Status: ERROR
+Return code: 1
+Stdout:
+
+Stderr:
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated_next.rs:5:7
+  |
+5 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated_next.rs:7:7
+  |
+7 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+ --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated_next.rs:9:7
+  |
+9 |     #[type_const]
+  |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated_next.rs:11:7
+   |
+11 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated_next.rs:18:7
+   |
+18 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated_next.rs:20:7
+   |
+20 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated_next.rs:22:7
+   |
+22 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: cannot find attribute `type_const` in this scope
+  --> /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/results/temp_cross_iter_1048_concrete-expr-with-generics-in-env_const_1_op3_mutated_next.rs:24:7
+   |
+24 |     #[type_const]
+   |       ^^^^^^^^^^
+
+error: aborting due to 8 previous errors
+
+

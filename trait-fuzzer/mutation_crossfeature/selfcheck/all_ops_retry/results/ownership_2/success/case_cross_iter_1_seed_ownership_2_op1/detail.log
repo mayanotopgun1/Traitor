@@ -1,0 +1,56 @@
+Seed: /home/laix/Study/Traitor/trait-fuzzer/mutation_crossfeature/selfcheck/all_ops_retry/seeds/ownership_2/seed.rs
+Operator Key: ownership_2
+Operator Name: receiver_semantics_conversion
+Target Type: S
+Target Trait: Do
+Baseline Status: SUCCESS
+Mutated Status: SUCCESS
+Mutated Duration: 0.1540s
+
+=== baseline (stable) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== baseline (nightly) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== baseline (next) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (stable) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (nightly) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+
+
+=== mutated (next) ===
+Status: SUCCESS
+Return code: 0
+Stdout:
+
+Stderr:
+

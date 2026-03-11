@@ -99,18 +99,82 @@ def clean_promoted_seeds(base_dir: Path, config: dict):
         for d in uniq:
             print(f"Removed promoted dir {d}")
 
+
+def clean_coverage_outputs(base_dir: Path, config: dict):
+    coverage_cfg = config.get("coverage", {})
+    profraw_rel = coverage_cfg.get("profraw_dir", "utils/coverage/profraw")
+    report_rel = coverage_cfg.get("grcov_output_dir", "utils/coverage/reports")
+
+    profraw_dir = Path(profraw_rel)
+    if not profraw_dir.is_absolute():
+        profraw_dir = (base_dir / profraw_dir).resolve()
+
+    report_dir = Path(report_rel)
+    if not report_dir.is_absolute():
+        report_dir = (base_dir / report_dir).resolve()
+
+    clean_directory(profraw_dir)
+    clean_directory(report_dir)
+    clean_directory(base_dir / "utils" / "coverage" / "case")
+
+    # Legacy coverage artifact dirs used by older runs/scripts.
+    clean_directory(base_dir / "utils" / "coverage" / "profraw_smoke")
+    clean_directory(base_dir / "utils" / "coverage" / "profraw_test")
+    clean_directory(base_dir / "utils" / "coverage" / "reports_smoke")
+
 def main():
     parser = argparse.ArgumentParser(description="Clean Trait-Fuzzer results")
-    parser.add_argument("--all", action="store_true", help="Clean all results and logs")
+    parser.add_argument("--all", action="store_true", help="Clean non-bug results and logs")
     parser.add_argument("--logs", action="store_true", help="Also clean log files")
+    parser.add_argument("--coverage", action="store_true", help="Also clean coverage outputs")
+    parser.add_argument(
+        "--clean-bugs",
+        action="store_true",
+        help="Also clean bug result directories (crash/hang/fate/dup/rewrite/miscompilation)",
+    )
     parser.add_argument("--config", default="config.json", help="Path to configuration file")
     args = parser.parse_args()
 
     base_dir = Path(__file__).parent
     config = _load_config(base_dir / args.config)
     
+    # New layout: clean only non-bug results by default.
+    clean_directory(base_dir / "results" / "rustc" / "success")
+    clean_directory(base_dir / "results" / "rustc" / "error")
+    clean_directory(base_dir / "results" / "gccrs" / "success")
+    clean_directory(base_dir / "results" / "gccrs" / "error")
+
+    # Backward compatibility: old flat layout non-bug directories.
     clean_directory(base_dir / "results" / "success")
     clean_directory(base_dir / "results" / "error")
+
+    # Bug directories are preserved unless explicitly requested.
+    if args.clean_bugs:
+        clean_directory(base_dir / "results" / "rustc" / "crash")
+        clean_directory(base_dir / "results" / "rustc" / "hang")
+        clean_directory(base_dir / "results" / "rustc" / "fate")
+        clean_directory(base_dir / "results" / "rustc" / "dup")
+        clean_directory(base_dir / "results" / "rustc" / "rewrite")
+        clean_directory(base_dir / "results" / "rustc" / "miscompilation")
+
+        clean_directory(base_dir / "results" / "gccrs" / "crash")
+        clean_directory(base_dir / "results" / "gccrs" / "hang")
+        clean_directory(base_dir / "results" / "gccrs" / "fate")
+        clean_directory(base_dir / "results" / "gccrs" / "dup")
+        clean_directory(base_dir / "results" / "gccrs" / "rewrite")
+
+        # Legacy bug directories
+        clean_directory(base_dir / "results" / "crash")
+        clean_directory(base_dir / "results" / "hang")
+        clean_directory(base_dir / "results" / "fate")
+        clean_directory(base_dir / "results" / "miscompilation")
+        clean_directory(base_dir / "results" / "dup")
+        clean_directory(base_dir / "results" / "rewrite")
+        clean_directory(base_dir / "results" / "gccrs_crash")
+        clean_directory(base_dir / "results" / "gccrs_hang")
+        print("Bug results cleaned (--clean-bugs enabled)")
+    else:
+        print("Bug results preserved (use --clean-bugs to remove them)")
     # Rewrites moved under LLM/rewrites
     clean_directory(base_dir / "LLM" / "rewrites")
     clean_directory(base_dir / "results_night" / "success")
@@ -135,6 +199,11 @@ def main():
             _truncate_if_exists(p)
     else:
         print("Logs skipped (use --logs or --all to clean them)")
+
+    if args.coverage:
+        clean_coverage_outputs(base_dir, config)
+    else:
+        print("Coverage outputs skipped (use --coverage to clean coverage dirs)")
 
     # Clean promoted seeds under seeds/<prefix><digits>/ based on config
     clean_promoted_seeds(base_dir, config)

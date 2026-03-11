@@ -1,21 +1,22 @@
 {
     "fuzzer": {
-        "iterations": 25000,
+        "iterations": 100000,
         "workers": 4,
         "worker_console_logging": false,
-        "mutations_per_seed": 5,
-        "injection_mutations_per_round": 30,
-        "projection_mutations_per_round": 30,
-        "lifetime_mutations_per_round": 20,
-        "outlive_mutations_per_round": 20,
+        "mutations_per_seed": 4,
+        "injection_mutations_per_round": 15,
+        "projection_mutations_per_round": 15,
+        "lifetime_mutations_per_round": 0,
+        "outlive_mutations_per_round": 0,
         "structural_mutations_per_round": 1,
         "seed_selection_strategy": "ttdn_metric",
         "max_time_per_case_sec": 15,
         "structural_subweights": {
-            "add_impl": 0.50,
-            "add_trait": 0.50
+            "add_impl": 0.5,
+            "add_trait": 0.5
         },
-        "max_promotions_per_seed": 1
+        "max_promotions_per_seed": 0,
+        "mutation_tool_timeout_sec": 12
     },
     "run": {
         "structural_only": false,
@@ -38,12 +39,28 @@
     "compiler": {
         "enable_next_trait_solver": true,
         "enable_nightly_compile": true,
+        "enable_gccrs": true,
+        "gccrs_cmd": [
+            "/home/laix/Study/Traitor/trait-fuzzer/gccrs/build/gcc/crab1"
+        ],
+        "gccrs_extra_args": [
+            "-frust-incomplete-and-experimental-compiler-do-not-use"
+        ],
+        "gccrs_work_dir": "/home/laix/Study/Traitor/trait-fuzzer/gccrs/build",
+        "gccrs_env": {
+            "LANG": "en_US.utf8",
+            "LC_ALL": "en_US.utf8",
+            "LANGUAGE": "en_US:en"
+        },
+        "gccrs_auto_no_core": true,
         "rustc_cmd": [
             "rustc"
         ],
         "rustc_z_cmd": [
-            "rustc",
-            "+nightly"
+            "rustup",
+            "run",
+            "nightly",
+            "rustc"
         ],
         "next_trait_solver_flag": "-Znext-solver=globally",
         "parallel_compile": true,
@@ -54,11 +71,14 @@
         "model": "qwen2.5-coder:14b",
         "api_base": "http://127.0.0.1:12023",
         "api_key_env": "OPENAI_API_KEY",
-        "enable_trait_rewrite": true,
+        "enable_trait_rewrite": false,
         "lock_path": "llm_global_lock_smoke.dir",
         "options": {
             "num_gpu": 48,
             "num_thread": 32
         }
+    },
+    "coverage": {
+        "enable": "false"
     }
 }

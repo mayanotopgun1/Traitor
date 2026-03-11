@@ -1,28 +1,54 @@
-#![feature(specialization)]
-trait Marker {}
-trait SpecializedTrait {
-    const CONST_BOOL: bool;
-    const CONST_STR: & str;
-    fn method() -> &'static str;
+
+#![feature(repr_simd, )]
+
+
+
+
+
+
+
+#[repr(simd)]
+
+struct T<const N: usize>([i32; N]);
+
+trait SimdInsert {
+    type Value;
+    unsafe fn insert(self, index: u8, value: Self::Value) -> Self;
 }
-impl<T> SpecializedTrait for T {
-     const CONST_BOOL: bool = false;
-     const CONST_STR: & str = "";
-     fn method() -> &'static str {
-        ""
+
+trait SimdExtract {
+    type Value;
+    unsafe fn extract(self, index: u8) -> Self::Value;
+}
+
+
+
+
+
+impl<const N: usize> SimdInsert for T<N> {
+    type Value = i32;
+    unsafe fn insert( self, index: u8, value: Self::Value) -> Self {
+        
+        self
     }
 }
-impl<T: Marker> SpecializedTrait for T
-where
-    T: SpecializedTrait,
-{}
-fn const_str<T>() -> &'static str {
-    <T as SpecializedTrait>::CONST_STR
+
+impl<const N: usize> SimdExtract for T<N> {
+    type Value = i32;
+    unsafe fn extract(self, index: u8) -> Self::Value {
+        self.0[index as usize]
+    }
 }
-struct TypeA;
-impl Marker for TypeA {}
-fn exit_if_not_eq(left: &str, right: &str) {}
- fn main() {
-    exit_if_not_eq("", const_str::<TypeA>());
+
+fn main() {
     
+    
+
+    let  t = T([5, 6, 7, 8]);
+    unsafe {
+        
+        
+        let value = t.extract(2);
+        
+    }
 }
